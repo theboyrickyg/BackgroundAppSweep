@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV / tablet: RAM dial on the left, figures in the middle, cleaning dial on the right -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <com.rickyboy.appsweep.RamGaugeView
+        android:id="@+id/ramGauge"
+        android:layout_width="160dp"
+        android:layout_height="160dp" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:letterSpacing="0.15"
+            android:text="BACKGROUND APP SWEEP"
+            android:textColor="@color/text_main"
+            android:textSize="20sp"
+            android:textStyle="bold|italic" />
+
+            <TextView
+                android:id="@+id/ramUsedText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:shadowColor="#88FFFFFF"
+                android:shadowRadius="8"
+                android:text="– GB / – GB"
+                android:textColor="@color/text_main"
+                android:textSize="28sp"
+                android:textStyle="bold|italic" />
+
+            <TextView
+                android:id="@+id/ramFreeText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:shadowColor="@color/neon_cyan"
+                android:shadowRadius="8"
+                android:textColor="@color/neon_cyan"
+                android:textSize="15sp"
+                android:textStyle="bold|italic" />
+
+            <TextView
+                android:id="@+id/appsCountText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:shadowColor="@color/neon_pink"
+                android:shadowRadius="8"
+                android:text="Launched apps: –"
+                android:textColor="@color/neon_pink"
+                android:textSize="15sp"
+                android:textStyle="bold|italic" />
+    </LinearLayout>
+
+    <com.rickyboy.appsweep.CleanGaugeView
+        android:id="@+id/cleanGauge"
+        android:layout_width="160dp"
+        android:layout_height="160dp" />
+</LinearLayout>
