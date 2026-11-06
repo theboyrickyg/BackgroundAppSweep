@@ -11,9 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: BackgroundAppSweep-source/AppSweep
+    
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +42,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           gradle assembleRelease --no-daemon
-          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/BackgroundAppSweep.apk"
+                   cp app/build/outputs/apk/release/app-release.apk BackgroundAppSweep.apk
 
       - uses: actions/upload-artifact@v4
         with:
