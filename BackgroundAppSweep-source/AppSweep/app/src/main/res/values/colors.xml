@@ -1,0 +1,10 @@
+<resources>
+    <color name="bg">#FF07070F</color>
+    <color name="card">#FF12121F</color>
+    <color name="card_focus">#FF1E1E36</color>
+    <color name="neon_cyan">#FF00F0FF</color>
+    <color name="neon_pink">#FFFF2D95</color>
+    <color name="neon_purple">#FF9D3CFF</color>
+    <color name="text_main">#FFFFFFFF</color>
+    <color name="text_dim">#FF9A9AB8</color>
+</resources>
