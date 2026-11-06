@@ -2,12 +2,16 @@ package com.rickyboy.appsweep
 
 import android.content.ActivityNotFoundException
 import android.content.Context
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -28,8 +32,8 @@ import rikka.shizuku.Shizuku
 class MainActivity : AppCompatActivity() {
 
     companion object {
-        private const val SHIZUKU_DOWNLOAD = "https://shizuku.rikka.app/download/"
         private const val PERMISSION_REQUEST = 4242
+        private const val NOTIFY_REQUEST = 4243
     }
 
     private lateinit var sweeper: Sweeper
@@ -40,6 +44,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusCard: LinearLayout
     private lateinit var statusText: TextView
     private lateinit var statusButton: Button
+    private lateinit var statusButton2: Button
+    private lateinit var codeRow: LinearLayout
+    private lateinit var codeInput: EditText
+    private lateinit var pairButton: Button
+    private lateinit var shizukuButton: Button
     private lateinit var sweepButton: Button
     private lateinit var resultText: TextView
     private lateinit var statsText: TextView
@@ -54,13 +63,16 @@ class MainActivity : AppCompatActivity() {
     private var lastTotalCache = -1L
     private val prefs by lazy { getSharedPreferences("appsweep", Context.MODE_PRIVATE) }
 
-    private val onShellReady: () -> Unit = { runOnUiThread { checkShizuku() } }
-    private val binderReceived = Shizuku.OnBinderReceivedListener { checkShizuku() }
+    private var setupJob: Job? = null
+    private val isTv by lazy { packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) }
+
+    private val onShellReady: () -> Unit = { runOnUiThread { checkConnection(userAsked = false) } }
+    private val binderReceived = Shizuku.OnBinderReceivedListener { checkConnection(userAsked = false) }
     private val binderDead = Shizuku.OnBinderDeadListener {
-        Shell.onBinderDead()
-        checkShizuku()
+        Shell.onShizukuDead()
+        checkConnection(userAsked = false)
     }
-    private val permissionResult = Shizuku.OnRequestPermissionResultListener { _, _ -> checkShizuku() }
+    private val permissionResult = Shizuku.OnRequestPermissionResultListener { _, _ -> checkConnection(userAsked = false) }
 
     // ---------- Lifecycle ----------
 
@@ -76,6 +88,13 @@ class MainActivity : AppCompatActivity() {
         statusCard = findViewById(R.id.statusCard)
         statusText = findViewById(R.id.statusText)
         statusButton = findViewById(R.id.statusButton)
+        statusButton2 = findViewById(R.id.statusButton2)
+        codeRow = findViewById(R.id.codeRow)
+        codeInput = findViewById(R.id.codeInput)
+        pairButton = findViewById(R.id.pairButton)
+        shizukuButton = findViewById(R.id.shizukuButton)
+        pairButton.setOnClickListener { pairFromApp() }
+        shizukuButton.setOnClickListener { useShizuku() }
         sweepButton = findViewById(R.id.sweepButton)
         resultText = findViewById(R.id.resultText)
         statsText = findViewById(R.id.statsText)
@@ -119,7 +138,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateMemory()
-        checkShizuku()
+        checkConnection(userAsked = false)
         if (ready && !busy) refresh()
     }
 
@@ -131,10 +150,22 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    // ---------- Shizuku status ----------
+    // ---------- Connection + guided setup ----------
 
-    private fun checkShizuku() {
-        val status = Shell.status(this)
+    private fun checkConnection(userAsked: Boolean) {
+        if (Shell.isReady()) {
+            onStatus(Shell.Status.READY)
+            return
+        }
+        if (setupJob?.isActive == true) return
+        if (userAsked) onStatus(Shell.Status.CONNECTING)
+        setupJob = lifecycleScope.launch {
+            val status = Shell.ensureConnected(applicationContext, userAsked)
+            onStatus(status)
+        }
+    }
+
+    private fun onStatus(status: Shell.Status) {
         val wasReady = ready
         ready = status == Shell.Status.READY
         showStatus(status)
@@ -147,38 +178,79 @@ class MainActivity : AppCompatActivity() {
         sweepButton.isEnabled = isReady && !busy
         sweepButton.alpha = if (isReady) 1f else 0.4f
         statusButton.visibility = View.VISIBLE
+        statusButton2.visibility = View.GONE
+        codeRow.visibility = View.GONE
+        shizukuButton.visibility = if (!isReady && Shell.shizukuInstalled(this)) View.VISIBLE else View.GONE
 
         when (status) {
-            Shell.Status.NOT_INSTALLED -> {
-                statusText.text = "Background App Sweep needs the free Shizuku app to close other apps and clear caches. " +
-                    "Install Shizuku, start it, then come back here."
-                statusButton.text = "Get Shizuku"
-                statusButton.setOnClickListener { openUrl(SHIZUKU_DOWNLOAD) }
+            Shell.Status.NEED_DEV_OPTIONS -> {
+                statusText.text = if (isTv) {
+                    "One-time setup (about a minute)\n\n" +
+                        "Step 1 of 2: turn on Developer options.\n" +
+                        "Settings → System → About → click \"Android TV OS build\" 7 times, " +
+                        "until it says you're a developer. Then come back here."
+                } else {
+                    "One-time setup (about a minute)\n\n" +
+                        "Step 1 of 3: turn on Developer options.\n" +
+                        "Settings → About phone → tap \"Build number\" 7 times " +
+                        "(on some phones it's under Software information). Then come back here."
+                }
+                statusButton.text = "Open Settings"
+                statusButton.setOnClickListener { openSettings(Settings.ACTION_DEVICE_INFO_SETTINGS) }
+                statusButton2.visibility = View.VISIBLE
+                statusButton2.text = "Done, next step"
+                statusButton2.setOnClickListener { checkConnection(userAsked = false) }
             }
-            Shell.Status.NOT_RUNNING -> {
-                statusText.text = "Shizuku is installed but not running. Open Shizuku and start it " +
-                    "(it needs starting again after every reboot)."
-                statusButton.text = "Open Shizuku"
-                statusButton.setOnClickListener { openShizuku() }
+            Shell.Status.NEED_DEBUGGING -> {
+                statusText.text = when {
+                    isTv ->
+                        "Step 2 of 2: turn on debugging.\n" +
+                            "Settings → System → Developer options → switch on \"Network debugging\" " +
+                            "(some TVs call it \"ADB debugging\"; if yours only has \"Wireless debugging\", switch that on).\n\n" +
+                            "Then press Connect. If a box asks \"Allow debugging?\", tick \"Always allow\" and press OK."
+                    Adb.hasPaired(this) ->
+                        "Wireless debugging is off. Android switches it off after a restart or a Wi-Fi change.\n\n" +
+                            "Developer options → switch \"Wireless debugging\" back on (no new code needed), then press Connect."
+                    else ->
+                        "Step 2 of 3: turn on Wireless debugging.\n" +
+                            "Settings → System → Developer options → switch on \"Wireless debugging\" " +
+                            "(you need to be on Wi-Fi). Tap Allow if it asks. Then come back and press Connect."
+                }
+                statusButton.text = "Open Developer options"
+                statusButton.setOnClickListener { openSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS) }
+                statusButton2.visibility = View.VISIBLE
+                statusButton2.text = "Connect"
+                statusButton2.setOnClickListener { checkConnection(userAsked = true) }
             }
-            Shell.Status.TOO_OLD -> {
-                statusText.text = "Your Shizuku is too old. Please update it to the latest version."
-                statusButton.text = "Update Shizuku"
-                statusButton.setOnClickListener { openUrl(SHIZUKU_DOWNLOAD) }
-            }
-            Shell.Status.NEED_PERMISSION -> {
-                statusText.text = "Shizuku is running. Allow Background App Sweep to use it."
-                statusButton.text = "Allow"
-                statusButton.setOnClickListener { Shizuku.requestPermission(PERMISSION_REQUEST) }
-            }
-            Shell.Status.DENIED -> {
-                statusText.text = "Background App Sweep was refused access. Open Shizuku → Authorized applications " +
-                    "and switch it on."
-                statusButton.text = "Open Shizuku"
-                statusButton.setOnClickListener { openShizuku() }
+            Shell.Status.NEED_PAIRING -> {
+                statusText.text = if (isTv) {
+                    "Last step: pair the app once.\n" +
+                        "Developer options → Wireless debugging → \"Pair device with pairing code\". " +
+                        "Write down the 6-digit code, press HOME on the remote (not Back), " +
+                        "open Background App Sweep again, type the code below and press Pair."
+                } else {
+                    "Step 3 of 3: pair the app once.\n" +
+                        "1. Press \"Start pairing\" below.\n" +
+                        "2. In Wireless debugging, tap \"Pair device with pairing code\".\n" +
+                        "3. Pull down your notifications and type the 6-digit code into the " +
+                        "Background App Sweep notification. Keep the code on screen while you do this.\n" +
+                        "4. Come back here when it says Paired ✓."
+                }
+                codeRow.visibility = View.VISIBLE
+                if (isTv) {
+                    statusButton.text = "Open Developer options"
+                    statusButton.setOnClickListener { openSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS) }
+                } else {
+                    statusButton.text = "Start pairing"
+                    statusButton.setOnClickListener { startPhonePairing() }
+                }
+                statusButton2.visibility = View.VISIBLE
+                statusButton2.text = "Connect"
+                statusButton2.setOnClickListener { checkConnection(userAsked = true) }
             }
             Shell.Status.CONNECTING -> {
-                statusText.text = "Connecting to Shizuku…"
+                statusText.text = "Connecting…\n\nIf a box pops up asking \"Allow debugging?\", " +
+                    "tick \"Always allow\" and press OK."
                 statusButton.visibility = View.GONE
             }
             Shell.Status.READY -> Unit
@@ -190,6 +262,71 @@ class MainActivity : AppCompatActivity() {
             statsText.text = ""
             appsCountText.text = "Launched apps: –"
             if (statusButton.visibility == View.VISIBLE) statusButton.requestFocus()
+        }
+    }
+
+    private fun startPhonePairing() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFY_REQUEST)
+            return
+        }
+        PairingNotification.showCodeBox(applicationContext)
+        openSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+        toast("Now tap Wireless debugging → Pair device with pairing code")
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == NOTIFY_REQUEST) {
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                startPhonePairing()
+            } else {
+                toast("No problem. Type the code into the box here instead (use split screen if you can).")
+            }
+        }
+    }
+
+    /** Pairing with the code typed into the app itself (TV, or phone in split screen). */
+    private fun pairFromApp() {
+        val code = codeInput.text.toString()
+        pairButton.isEnabled = false
+        pairButton.text = "Pairing…"
+        lifecycleScope.launch {
+            val error = withContext(Dispatchers.IO) { Adb.pair(applicationContext, code) }
+            pairButton.isEnabled = true
+            pairButton.text = "Pair"
+            if (error == null) {
+                toast("Paired ✓ Connecting…")
+                checkConnection(userAsked = true)
+            } else {
+                toast(error)
+            }
+        }
+    }
+
+    private fun useShizuku() {
+        when {
+            !Shell.shizukuRunning() -> openShizuku()
+            !Shell.shizukuUsable() -> try {
+                Shizuku.requestPermission(PERMISSION_REQUEST)
+            } catch (_: Throwable) {
+                openShizuku()
+            }
+            else -> checkConnection(userAsked = false)
+        }
+    }
+
+    private fun openSettings(action: String) {
+        try {
+            startActivity(Intent(action))
+        } catch (_: ActivityNotFoundException) {
+            try {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
+            } catch (_: ActivityNotFoundException) {
+                toast("Open the Settings app")
+            }
         }
     }
 
@@ -369,14 +506,6 @@ class MainActivity : AppCompatActivity() {
         val intent = packageManager.getLaunchIntentForPackage(Shell.SHIZUKU_PACKAGE)
             ?: packageManager.getLeanbackLaunchIntentForPackage(Shell.SHIZUKU_PACKAGE)
         if (intent != null) startActivity(intent) else toast("Couldn't open Shizuku")
-    }
-
-    private fun openUrl(url: String) {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        } catch (_: ActivityNotFoundException) {
-            toast("No web browser found. Get Shizuku from $url (or use Downloader on TV)")
-        }
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()

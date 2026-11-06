@@ -6,6 +6,12 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
+    <!-- Talks to the device's own debugging service over a local connection -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Setup notification where the phone pairing code is typed -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Needed to show the names and icons of other apps -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
@@ -72,7 +78,12 @@
             </intent-filter>
         </service>
 
-        <!-- Lets the Shizuku app hand its privileged connection to AppSweep -->
+        <!-- Receives the pairing code typed into the setup notification -->
+        <receiver
+            android:name=".PairingReceiver"
+            android:exported="false" />
+
+        <!-- Optional: lets the Shizuku app hand its privileged connection to AppSweep -->
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"

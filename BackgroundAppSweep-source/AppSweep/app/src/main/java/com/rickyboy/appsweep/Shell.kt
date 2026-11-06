@@ -5,95 +5,130 @@ import android.content.Context
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import java.util.concurrent.CopyOnWriteArraySet
 
-/** One shared connection to the Shizuku-powered shell, used by every screen. */
+/**
+ * One place that runs privileged shell commands. Uses the built-in ADB connection
+ * ([Adb]) and, if the person already uses Shizuku, that as a backup.
+ */
 object Shell {
 
     const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
 
-    enum class Status { NOT_INSTALLED, NOT_RUNNING, TOO_OLD, NEED_PERMISSION, DENIED, CONNECTING, READY }
+    /** Where the setup is up to. */
+    enum class Status {
+        READY,
+        NEED_DEV_OPTIONS,   // Developer options not switched on yet
+        NEED_DEBUGGING,     // Network / Wireless debugging not on, or not reachable
+        NEED_PAIRING,       // Wireless debugging is on but this app hasn't been paired
+        CONNECTING
+    }
 
-    @Volatile
-    var service: IShellService? = null
-        private set
-
-    private var bound = false
-    private var args: Shizuku.UserServiceArgs? = null
     val readyListeners = CopyOnWriteArraySet<() -> Unit>()
 
-    private val connection = object : ServiceConnection {
+    fun isReady() = Adb.isConnected() || shizukuService != null
+
+    fun exec(cmd: String): String = when {
+        Adb.isConnected() -> Adb.exec(cmd)
+        shizukuService != null -> try {
+            shizukuService?.exec(cmd) ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+        else -> ""
+    }
+
+    /**
+     * Gets connected if it can. [userAsked] = the person pressed Connect, so it's fine for the
+     * device to show its "Allow debugging?" box. Otherwise only reconnects silently.
+     */
+    suspend fun ensureConnected(ctx: Context, userAsked: Boolean): Status = withContext(Dispatchers.IO) {
+        if (isReady()) return@withContext Status.READY
+
+        // Shizuku, if they already have it running and allowed
+        if (shizukuUsable()) {
+            bindShizuku(ctx)
+            repeat(15) {
+                if (shizukuService != null) return@withContext Status.READY
+                delay(200)
+            }
+        }
+
+        if (!Adb.developerOptionsOn(ctx) && !Adb.hasWorkedBefore(ctx)) return@withContext Status.NEED_DEV_OPTIONS
+
+        if (userAsked || Adb.hasWorkedBefore(ctx) || Adb.hasPaired(ctx)) {
+            when (Adb.connect(ctx)) {
+                Adb.Result.CONNECTED -> {
+                    readyListeners.forEach { it() }
+                    return@withContext Status.READY
+                }
+                Adb.Result.NEEDS_PAIRING -> return@withContext Status.NEED_PAIRING
+                Adb.Result.NOT_AVAILABLE -> Unit
+            }
+        }
+        if (Adb.wirelessDebuggingOn(ctx) && !Adb.hasPaired(ctx)) Status.NEED_PAIRING else Status.NEED_DEBUGGING
+    }
+
+    // ---------- Optional Shizuku backup ----------
+
+    @Volatile
+    private var shizukuService: IShellService? = null
+    private var shizukuBound = false
+    private var shizukuArgs: Shizuku.UserServiceArgs? = null
+
+    private val shizukuConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             if (binder != null && binder.pingBinder()) {
-                service = IShellService.Stub.asInterface(binder)
+                shizukuService = IShellService.Stub.asInterface(binder)
                 readyListeners.forEach { it() }
             }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            service = null
-            bound = false
+            shizukuService = null
+            shizukuBound = false
         }
     }
 
-    fun onBinderDead() {
-        service = null
-        bound = false
+    fun onShizukuDead() {
+        shizukuService = null
+        shizukuBound = false
     }
 
-    /** Works out where we are in the setup, and starts connecting if possible. */
-    fun status(ctx: Context): Status {
-        if (!Shizuku.pingBinder()) {
-            service = null
-            bound = false
-            return if (isInstalled(ctx, SHIZUKU_PACKAGE)) Status.NOT_RUNNING else Status.NOT_INSTALLED
-        }
-        if (Shizuku.isPreV11()) return Status.TOO_OLD
-        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-            return if (Shizuku.shouldShowRequestPermissionRationale()) Status.DENIED else Status.NEED_PERMISSION
-        }
-        if (service != null) return Status.READY
-        bind(ctx)
-        return Status.CONNECTING
+    fun shizukuInstalled(ctx: Context) = isInstalled(ctx, SHIZUKU_PACKAGE)
+
+    fun shizukuRunning(): Boolean = try {
+        Shizuku.pingBinder() && !Shizuku.isPreV11()
+    } catch (_: Throwable) {
+        false
     }
 
-    private fun bind(ctx: Context) {
-        if (bound) return
-        val a = args ?: Shizuku.UserServiceArgs(
+    fun shizukuUsable(): Boolean = try {
+        shizukuRunning() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+    } catch (_: Throwable) {
+        false
+    }
+
+    fun bindShizuku(ctx: Context) {
+        if (shizukuBound || !shizukuUsable()) return
+        val a = shizukuArgs ?: Shizuku.UserServiceArgs(
             ComponentName(ctx.packageName, ShellService::class.java.name)
         )
             .daemon(false)
             .processNameSuffix("shell")
             .debuggable(BuildConfig.DEBUG)
             .version(BuildConfig.VERSION_CODE)
-        args = a
+        shizukuArgs = a
         try {
-            Shizuku.bindUserService(a, connection)
-            bound = true
-        } catch (_: Exception) {
+            Shizuku.bindUserService(a, shizukuConnection)
+            shizukuBound = true
+        } catch (_: Throwable) {
         }
     }
-
-    /** For the quick screens: waits a few seconds for Shizuku + the shell to come up. */
-    suspend fun awaitReady(ctx: Context, timeoutMs: Long = 6000): Status {
-        var waited = 0L
-        var s = status(ctx)
-        while ((s == Status.CONNECTING || s == Status.NOT_RUNNING) && waited < timeoutMs) {
-            delay(200)
-            waited += 200
-            s = status(ctx)
-        }
-        return s
-    }
-
-    fun exec(cmd: String): String =
-        try {
-            service?.exec(cmd) ?: ""
-        } catch (_: Exception) {
-            ""
-        }
 
     fun isInstalled(ctx: Context, pkg: String): Boolean =
         try {

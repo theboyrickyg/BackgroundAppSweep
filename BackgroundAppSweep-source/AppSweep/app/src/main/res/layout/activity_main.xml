@@ -91,18 +91,91 @@
             android:textColor="@color/text_main"
             android:textSize="15sp" />
 
-        <Button
-            android:id="@+id/statusButton"
-            android:layout_width="wrap_content"
-            android:layout_height="44dp"
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:background="@drawable/bg_small_button"
-            android:paddingStart="22dp"
-            android:paddingEnd="22dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/statusButton"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_small_button"
+                android:paddingStart="18dp"
+                android:paddingEnd="18dp"
+                android:stateListAnimator="@null"
+                android:textAllCaps="false"
+                android:textColor="@color/neon_cyan"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/statusButton2"
+                android:layout_width="wrap_content"
+                android:layout_height="44dp"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/bg_small_button"
+                android:paddingStart="18dp"
+                android:paddingEnd="18dp"
+                android:stateListAnimator="@null"
+                android:textAllCaps="false"
+                android:textColor="@color/neon_cyan"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/codeRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <EditText
+                android:id="@+id/codeInput"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_small_button"
+                android:hint="6-digit pairing code"
+                android:imeOptions="actionDone"
+                android:inputType="number"
+                android:maxLength="6"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:textColor="@color/text_main"
+                android:textColorHint="@color/text_dim"
+                android:textSize="18sp" />
+
+            <Button
+                android:id="@+id/pairButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/bg_small_button"
+                android:paddingStart="22dp"
+                android:paddingEnd="22dp"
+                android:stateListAnimator="@null"
+                android:text="Pair"
+                android:textAllCaps="false"
+                android:textColor="@color/neon_cyan"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/shizukuButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginTop="10dp"
+            android:background="@android:color/transparent"
             android:stateListAnimator="@null"
+            android:text="Already use Shizuku? Use it instead"
             android:textAllCaps="false"
-            android:textColor="@color/neon_cyan"
-            android:textStyle="bold" />
+            android:textColor="@color/text_dim"
+            android:textSize="12sp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <Button

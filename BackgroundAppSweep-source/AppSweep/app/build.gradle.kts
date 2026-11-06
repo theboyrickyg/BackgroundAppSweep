@@ -52,6 +52,16 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    packaging {
+        resources {
+            excludes += setOf(
+                "META-INF/versions/**",
+                "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA",
+                "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/DEPENDENCIES"
+            )
+        }
+    }
+
     kotlinOptions {
         jvmTarget = "17"
     }
@@ -61,6 +71,11 @@ dependencies {
     val shizukuVersion = "13.1.5"
     implementation("dev.rikka.shizuku:api:$shizukuVersion")
     implementation("dev.rikka.shizuku:provider:$shizukuVersion")
+
+    // Built-in ADB connection (no helper app needed)
+    implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
+    implementation("org.conscrypt:conscrypt-android:2.5.3")
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")

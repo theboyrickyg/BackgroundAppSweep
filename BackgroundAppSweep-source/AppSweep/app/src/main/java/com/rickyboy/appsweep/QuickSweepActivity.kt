@@ -33,9 +33,9 @@ class QuickSweepActivity : AppCompatActivity() {
         val sweeper = Sweeper(applicationContext)
         lifecycleScope.launch {
             status.text = "Connecting…"
-            val state = Shell.awaitReady(this@QuickSweepActivity)
+            val state = Shell.ensureConnected(applicationContext, userAsked = false)
             if (state != Shell.Status.READY) {
-                status.text = "Shizuku isn't ready"
+                status.text = "Not set up yet"
                 result.text = "Open Background App Sweep to finish setting up."
                 result.visibility = View.VISIBLE
                 openButton.visibility = View.VISIBLE

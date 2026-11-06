@@ -31,13 +31,11 @@ A neon-style app for **Android phones and Android TV / Google TV**.
   - Phone: long-press the Background App Sweep icon, or add the *Quick Sweep* tile to your pull-down panel (edit tiles ✏️).
   - It sweeps, shows the result for 3 seconds, then disappears.
 
-## Why it needs Shizuku
+## One app, one-time setup
 
-Since Android 10, normal apps are blocked from seeing other apps, closing them, or clearing their caches. That's why most "RAM booster" apps don't do anything any more. **Shizuku** is a free, well-known helper app that gives the app the same rights as a USB debugging (ADB) connection, so the buttons actually work.
+Since Android 10, normal apps are blocked from seeing other apps, closing them, or clearing their caches. That's why most "RAM booster" apps don't do anything any more.
 
-You set Shizuku up once per device. After a **reboot** you have to start Shizuku again (on Android 11+ phones it can be set to start itself).
-
----
+Background App Sweep gets round this properly by connecting to the device's own **debugging service**, the same thing a PC uses over USB, built right into the app. **No second app is needed.** Android only lets the device owner switch debugging on, so there's a short one-time setup, and the app walks you through it on screen.
 
 ## 1. Build the APK (GitHub does it for you)
 
@@ -57,34 +55,29 @@ https://github.com/YOUR-USERNAME/AppSweep/releases/latest/download/BackgroundApp
 
 Put that link into aftvnews.com/downloader to get a Downloader code for the TV.
 
-## 2. Set up Shizuku on a phone (Android 11 or newer, no computer needed)
+## 2. Set up on a TV (no PC needed)
 
-1. Install **Shizuku** from the Play Store (or https://shizuku.rikka.app/download/).
-2. Turn on Developer options: **Settings → About phone →** tap **Build number** 7 times.
-3. In **Developer options**, turn on **Wireless debugging** (the phone must be on Wi-Fi).
-4. Open Shizuku → **Start via Wireless debugging → Pairing** and follow the steps (you type the pairing code into Shizuku's notification).
-5. Tap **Start** in Shizuku. It should say *Shizuku is running*.
-6. Open Background App Sweep → tap **Allow**.
+1. Install Background App Sweep and open it.
+2. **Developer options:** Settings → System → About → click **Android TV OS build** 7 times.
+3. **Debugging:** Settings → System → Developer options → switch on **Network debugging** (sometimes called ADB debugging).
+4. Back in the app, press **Connect**. When the TV asks **"Allow debugging?"**, tick **Always allow** and press **OK**.
 
-## 3. Set up Shizuku on Android TV / Google TV
+That's it. On most TVs it keeps working after a restart.
 
-TVs can't do the phone pairing step, so you start Shizuku from a computer once (and again after each TV reboot).
+*If your TV only has **Wireless debugging**:* switch it on, then choose **Pair device with pairing code**. Note the 6-digit code, press **HOME** (not Back), open Background App Sweep, type the code and press **Pair**.
 
-1. On the TV, use Downloader to install Shizuku from https://github.com/RikkaApps/Shizuku/releases (download the `.apk`).
-2. Turn on Developer options: **Settings → System → About →** click **Android TV OS build** 7 times.
-3. **Settings → System → Developer options →** turn on **USB debugging** (and **Network debugging** if it's listed).
-4. Note the TV's IP address: **Settings → Network & Internet →** your Wi-Fi network.
-5. On a PC on the same Wi-Fi, install Google's **SDK Platform Tools** (that gives you `adb`) and run:
-   ```
-   adb connect TV-IP-ADDRESS:5555
-   ```
-   Click **Allow** on the TV when it asks.
-6. Open Shizuku on the TV → **Start via ADB → View command**. Type that exact command on the PC, e.g.
-   ```
-   adb shell sh /storage/emulated/0/Android/data/moe.shizuku.privileged.api/start.sh
-   ```
-   (Use whatever command your Shizuku version shows; it changes between versions.)
-7. Open Background App Sweep on the TV → **Allow**.
+## 3. Set up on a phone (Android 11 or newer)
+
+1. Install Background App Sweep and open it.
+2. **Developer options:** Settings → About phone → tap **Build number** 7 times.
+3. **Wireless debugging:** Settings → System → Developer options → switch on **Wireless debugging** (Wi-Fi must be on).
+4. In the app press **Start pairing**, then in Wireless debugging tap **Pair device with pairing code**.
+5. Pull down your notifications and type the 6-digit code into the **Background App Sweep** notification. It says **Paired ✓** when done.
+6. Go back to the app. It connects by itself.
+
+Android turns Wireless debugging off after a restart or a Wi-Fi change. If the app asks, switch it back on in Developer options. No new code is needed.
+
+*Already use Shizuku?* The app can use that instead: tap **"Already use Shizuku? Use it instead"** on the setup screen.
 
 ## Good to know
 
