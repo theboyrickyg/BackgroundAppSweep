@@ -20,6 +20,8 @@ jobs:
           java-version: '17'
 
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
       - name: Load signing key
         env:
@@ -38,8 +40,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          gradle assembleRelease --no-daemon
           cp app/build/outputs/apk/release/app-release.apk BackgroundAppSweep.apk
 
       - uses: actions/upload-artifact@v4
