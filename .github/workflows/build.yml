@@ -1,6 +1,5 @@
 name: Build Background App Sweep APK
 
-# Run it from the Actions tab ("Run workflow"), or by pushing to main.
 on:
   workflow_dispatch:
   push:
@@ -20,7 +19,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-          - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
 
       - name: Load signing key
         env:
@@ -30,7 +29,7 @@ jobs:
             echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/appsweep.jks"
             echo "KEYSTORE_FILE=$RUNNER_TEMP/appsweep.jks" >> "$GITHUB_ENV"
           else
-            echo "::warning::No KEYSTORE_BASE64 secret - building with a temporary key. Updates will need an uninstall first."
+            echo "::warning::No KEYSTORE_BASE64 secret - building with a temporary key."
           fi
 
       - name: Build APK
