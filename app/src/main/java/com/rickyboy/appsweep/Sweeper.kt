@@ -286,7 +286,7 @@ class Sweeper(private val ctx: Context) {
     }
 
     /** The big button. [onProgress] gets 0–100 as it goes (called from a background thread). */
-    fun sweepAll(apps: List<RunningApp>, onProgress: (Int) -> Unit = {}): SweepResult {
+    fun sweepAll(apps: List<RunningApp>, onProgress: (Int) -> Unit = {}, onClosed: (String) -> Unit = {}): SweepResult {
         val targets = apps.filter { it.isRunning && !it.isProtected && !it.isSystem }
         val ramBefore = availableRam()
         val diskBefore = freeStorage()
@@ -295,6 +295,7 @@ class Sweeper(private val ctx: Context) {
         // Close each app in turn (0–65%)
         targets.forEachIndexed { i, app ->
             Shell.exec("am force-stop ${app.packageName}")
+            onClosed(app.packageName)
             onProgress(5 + 60 * (i + 1) / targets.size)
         }
         onProgress(66)
@@ -302,7 +303,7 @@ class Sweeper(private val ctx: Context) {
         onProgress(75)
         Shell.exec("pm trim-caches 999G")    // every app's cache
         onProgress(90)
-        Thread.sleep(1500)                   // let Android reclaim memory
+        Thread.sleep(3000)                   // let Android reclaim memory before measuring
         onProgress(100)
 
         return SweepResult(

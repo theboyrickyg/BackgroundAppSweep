@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var resultRow: LinearLayout
     private lateinit var allCleanView: View
     private lateinit var closeAppButton: Button
+    private lateinit var tvAutoButton: Button
     private var sweptThisSession = false
     private var awaitingStep = -1   // which Easy step to show after coming back from Settings
     private lateinit var statClosed: TextView
@@ -134,6 +135,8 @@ class MainActivity : AppCompatActivity() {
         allCleanView = findViewById(R.id.allCleanView)
         closeAppButton = findViewById(R.id.closeAppButton)
         closeAppButton.setOnClickListener { finishAndRemoveTask() }
+        tvAutoButton = findViewById(R.id.tvAutoButton)
+        tvAutoButton.setOnClickListener { showTvAutoSteps() }
         statClosed = findViewById(R.id.statClosed)
         statRam = findViewById(R.id.statRam)
         statCache = findViewById(R.id.statCache)
@@ -175,6 +178,7 @@ class MainActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch { EasySweep.closedNow.collect { pkg -> removeFromList(pkg) } }
                 EasySweep.state.collect { st ->
                     if (st.running) cleanGauge.setProgress(st.percent.toFloat())
                     val r = st.result
@@ -614,7 +618,7 @@ class MainActivity : AppCompatActivity() {
             }
             updateMemory()
             if (guided) {
-                statsText.text = "Press Close All: each app's page opens. Press Force stop, then OK, then Back."
+                statsText.text = "Press Close All: each app's page opens. Press Force stop, OK, then Clear cache, then Back."
                 return@launch
             }
             if (easy) {
@@ -640,6 +644,7 @@ class MainActivity : AppCompatActivity() {
         val userApps = currentApps.count { !it.isSystem && it.isRunning }
         appsCountText.text = colored("Launched apps: ", 0, "$userApps", RED)
         updateCloseAppButton(userApps)
+        tvAutoButton.visibility = if (tvGuided && !busy) View.VISIBLE else View.GONE
         if (tvGuided) {
             listHeader.text = colored("Launched apps (", 0, "$userApps", RED, ")")
             listHint.text = if (userApps == 0) "No launched apps. All clean!"
@@ -691,7 +696,11 @@ class MainActivity : AppCompatActivity() {
         startSweepUi()
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
-                sweeper.sweepAll(apps) { pct -> runOnUiThread { cleanGauge.setProgress(pct.toFloat()) } }
+                sweeper.sweepAll(
+                    apps,
+                    onProgress = { pct -> runOnUiThread { cleanGauge.setProgress(pct.toFloat()) } },
+                    onClosed = { pkg -> runOnUiThread { removeFromList(pkg) } }
+                )
             }
             cleanGauge.finish()
             showSweepDone(result)
@@ -730,7 +739,7 @@ class MainActivity : AppCompatActivity() {
         cleanGauge.setProgress(100f * (n - 1) / guidedTotal)
         resultText.text = "Closing $n of $guidedTotal: ${app.label}"
         resultText.visibility = View.VISIBLE
-        Toast.makeText(this, "${app.label} ($n of $guidedTotal): press Force stop, then OK, then Back", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "${app.label} ($n of $guidedTotal): press Force stop, OK, then Clear cache, then Back", Toast.LENGTH_LONG).show()
         try {
             startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.packageName}")))
         } catch (_: ActivityNotFoundException) {
@@ -738,9 +747,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Drops an app from the list the moment it's closed. */
+    private fun removeFromList(pkg: String) {
+        if (currentApps.none { it.packageName == pkg }) return
+        showList(currentApps.filter { it.packageName != pkg })
+    }
+
     /** Back from an app's page: count it if it was stopped, then open the next one after a moment. */
     private fun onGuidedReturn() {
-        guidedCurrent?.let { if (sweeper.isStopped(it.packageName)) guidedClosed++ }
+        guidedCurrent?.let {
+            if (sweeper.isStopped(it.packageName)) {
+                guidedClosed++
+                removeFromList(it.packageName)
+            }
+        }
         guidedCurrent = null
         val n = guidedTotal - guidedQueue.size
         cleanGauge.setProgress(100f * n / guidedTotal)
@@ -762,21 +782,53 @@ class MainActivity : AppCompatActivity() {
         if (!guidedActive) return
         guidedActive = false
         guidedNextJob?.cancel()
-        guidedCurrent?.let { if (sweeper.isStopped(it.packageName)) guidedClosed++ }
+        guidedCurrent?.let {
+            if (sweeper.isStopped(it.packageName)) {
+                guidedClosed++
+                removeFromList(it.packageName)
+            }
+        }
         guidedCurrent = null
         guidedQueue.clear()
         sweepButton.setOnClickListener { sweepAll() }
-        val result = SweepResult(
-            closed = guidedClosed,
-            ramFreed = (sweeper.availableRam() - guidedRamBefore).coerceAtLeast(0),
-            cacheFreed = (sweeper.freeStorage() - guidedDiskBefore).coerceAtLeast(0)
-        )
-        cleanGauge.finish()
-        showSweepDone(result)
+        sweepButton.isEnabled = false
+        sweepButton.text = "FINISHING…"
+        resultText.text = "Letting Android settle before measuring…"
+        lifecycleScope.launch {
+            delay(3000)   // give Android a moment to reclaim the memory before the "after" reading
+            val result = SweepResult(
+                closed = guidedClosed,
+                ramFreed = (sweeper.availableRam() - guidedRamBefore).coerceAtLeast(0),
+                cacheFreed = (sweeper.freeStorage() - guidedDiskBefore).coerceAtLeast(0)
+            )
+            cleanGauge.finish()
+            showSweepDone(result)
+        }
+    }
+
+    /** TV: how to switch on automatic closing (one time). */
+    private fun showTvAutoSteps() {
+        AlertDialog.Builder(this)
+            .setTitle("Make closing automatic")
+            .setMessage(
+                "App Closer can press Force stop and OK for you, and go back by itself. " +
+                    "Android needs you to switch this on once:\n\n" +
+                    "1. Select \"Open Accessibility settings\".\n" +
+                    "2. Choose App Closer (under Services or Downloaded services).\n" +
+                    "3. Switch it on and choose OK.\n" +
+                    "4. Press Back to return here.\n\n" +
+                    "You can switch it off again at any time in the same place."
+            )
+            .setPositiveButton("Open Accessibility settings") { _, _ ->
+                openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            }
+            .setNegativeButton("Not now", null)
+            .show()
     }
 
     private fun startSweepUi() {
         busy = true
+        tvAutoButton.visibility = View.GONE
         closeAppButton.visibility = View.GONE
         allCleanView.animate().cancel()
         allCleanView.visibility = View.GONE
@@ -825,7 +877,13 @@ class MainActivity : AppCompatActivity() {
         sweptThisSession = true
         if (worked) {
             // The happy ram pops in where the button was
-            resultText.visibility = View.GONE
+            if (result.ramFreed < 50L * 1024 * 1024) {
+                resultText.text = "Only a little RAM needed freeing: Android had already paused most of these apps " +
+                    "in the background. Closing them stops them waking up again."
+                resultText.visibility = View.VISIBLE
+            } else {
+                resultText.visibility = View.GONE
+            }
             sweepButton.visibility = View.INVISIBLE   // stays in place for when it comes back
             allCleanView.visibility = View.VISIBLE
             allCleanView.scaleX = 0.6f
@@ -835,7 +893,7 @@ class MainActivity : AppCompatActivity() {
                 .setDuration(450).setInterpolator(android.view.animation.OvershootInterpolator(1.6f)).start()
         } else {
             resultText.text = if (isTv && !Shell.isReady() && !SweepAccessibilityService.isOn()) {
-                "Nothing was closed. On each app's page, press Force stop, then OK."
+                "Nothing was closed. On each app's page, press Force stop, then OK, then Clear cache."
             } else if (easyMode) {
                 "Nothing was closed. Easy mode couldn't press the buttons on this phone (see the report)."
             } else {

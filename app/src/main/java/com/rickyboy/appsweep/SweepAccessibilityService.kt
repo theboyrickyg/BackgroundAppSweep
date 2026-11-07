@@ -35,6 +35,9 @@ object EasySweep {
     )
 
     val state = MutableStateFlow(State())
+
+    /** Each app as it's closed, so the list can drop it straight away. */
+    val closedNow = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 64)
 }
 
 /**
@@ -209,13 +212,19 @@ class SweepAccessibilityService : AccessibilityService() {
                 apps.forEachIndexed { i, (pkg, label) ->
                     publish(true, 3 + 92 * i / apps.size.coerceAtLeast(1), label)
                     updateOverlay(i + 1, apps.size, label)
-                    if (processApp(pkg, label, forceStop, clearCache)) closed++
+                    if (processApp(pkg, label, forceStop, clearCache)) {
+                        closed++
+                        if (forceStop) {
+                            OpenedApps.remove(applicationContext, listOf(pkg))
+                            EasySweep.closedNow.tryEmit(pkg)
+                        }
+                    }
                 }
                 if (forceStop) OpenedApps.remove(applicationContext, apps.map { it.first })
             } catch (_: Exception) {
             }
             publish(true, 98, "")
-            delay(800)
+            delay(3000)   // let Android reclaim memory before the "after" reading
             val result = SweepResult(
                 closed = closed,
                 ramFreed = (sweeper.availableRam() - ramBefore).coerceAtLeast(0),

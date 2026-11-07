@@ -70,7 +70,7 @@ Put that link into aftvnews.com/downloader to get a Downloader code for the TV.
 
 ## 2. On Google TV / Android TV
 
-No setup needed. Open App Closer and press **CLOSE ALL & CLEAR CACHE**: each launched app's page opens in turn. Press **Force stop**, then **OK**, then **Back**, and the next app opens by itself. Press **STOP** to finish early.
+No setup needed. Open App Closer and press **CLOSE ALL & CLEAR CACHE**: each launched app's page opens in turn. Press **Force stop**, **OK**, then **Clear cache**, then **Back**, and the next app opens by itself. Press **STOP** to finish early.
 
 (If you've switched on App Closer in the TV's Accessibility settings, or connected Pro before, it closes everything automatically instead.)
 

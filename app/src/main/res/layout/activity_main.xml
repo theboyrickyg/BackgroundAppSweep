@@ -186,6 +186,20 @@
         </LinearLayout>
     </FrameLayout>
 
+    <!-- TV only: optional one-time switch that makes closing fully automatic -->
+    <Button
+        android:id="@+id/tvAutoButton"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/bg_small_button"
+        android:stateListAnimator="@null"
+        android:text="Make closing automatic"
+        android:textAllCaps="false"
+        android:textColor="@color/text_main"
+        android:textSize="15sp"
+        android:visibility="gone" />
+
     <LinearLayout
         android:id="@+id/resultRow"
         android:layout_width="match_parent"
