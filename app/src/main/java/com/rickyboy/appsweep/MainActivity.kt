@@ -91,6 +91,9 @@ class MainActivity : AppCompatActivity() {
     private var guidedNextJob: Job? = null
     private var autoSweepPending = false
 
+    /** TV without Pro: the list is always the TV's launched apps, whether closing is guided or automatic. */
+    private val tvList: Boolean get() = isTv && !Shell.isReady()
+
     /** Easy mode = no debugging connection, but the accessibility switch is on. */
     private val easyMode: Boolean get() = !Shell.isReady() && SweepAccessibilityService.isOn()
     private var setupChoice: String?
@@ -604,8 +607,9 @@ class MainActivity : AppCompatActivity() {
             if (currentApps.isEmpty()) listHeader.text = "Scanning…"
             val easy = easyMode
             val guided = tvGuided
+            val tvLaunched = tvList
             val apps = withContext(Dispatchers.IO) {
-                if (guided) {
+                if (tvLaunched) {
                     sweeper.scanTvLaunched()
                 } else if (easy) {
                     sweeper.scanEasy()
@@ -617,7 +621,7 @@ class MainActivity : AppCompatActivity() {
                     sweeper.scan(includeSystem = false)
                 }
             }
-            adapter.easyMode = easy || guided
+            adapter.easyMode = easy || tvLaunched
             showList(apps)
             if (autoSweepPending && !busy) {
                 autoSweepPending = false
@@ -626,6 +630,10 @@ class MainActivity : AppCompatActivity() {
             updateMemory()
             if (guided) {
                 statsText.text = "Press Close All: each app's page opens. Press Force stop, OK, then Clear cache, then Back."
+                return@launch
+            }
+            if (tvLaunched) {
+                statsText.text = "Automatic closing is on · press Close All"
                 return@launch
             }
             if (easy) {
@@ -652,7 +660,7 @@ class MainActivity : AppCompatActivity() {
         appsCountText.text = colored("Launched apps: ", 0, "$userApps", RED)
         updateCloseAppButton(userApps)
         tvAutoButton.visibility = if (tvGuided && !busy) View.VISIBLE else View.GONE
-        if (tvGuided) {
+        if (tvList) {
             listHeader.text = colored("Launched apps (", 0, "$userApps", RED, ")")
             listHint.text = if (userApps == 0) "No launched apps. All clean!"
                 else "Select an app to close just that one"
@@ -924,7 +932,8 @@ class MainActivity : AppCompatActivity() {
         resultRow.visibility = View.VISIBLE
         busy = false
         sweepButton.isEnabled = true
-        val worked = result.closed > 0 || result.cacheFreed > 0
+        val remaining = currentApps.count { it.isRunning && !it.isSystem && !it.isProtected }
+        val worked = (result.closed > 0 || result.cacheFreed > 0) && remaining == 0
         sweptThisSession = true
         if (worked) {
             // The happy ram pops in where the button was
@@ -942,6 +951,14 @@ class MainActivity : AppCompatActivity() {
             allCleanView.alpha = 0f
             allCleanView.animate().scaleX(1f).scaleY(1f).alpha(1f)
                 .setDuration(450).setInterpolator(android.view.animation.OvershootInterpolator(1.6f)).start()
+        } else if (result.closed > 0) {
+            // closed some (e.g. a single app) but others are still open: no "All clean!"
+            resultText.text = "Closed ${result.closed} app${if (result.closed == 1) "" else "s"}. " +
+                "$remaining still open: press Close All to clean the rest."
+            resultText.visibility = View.VISIBLE
+            sweepButton.setBackgroundResource(R.drawable.bg_sweep_button)
+            sweepButton.text = getString(R.string.sweep_button)
+            cleanGauge.reset()
         } else {
             resultText.text = if (isTv && !Shell.isReady() && !SweepAccessibilityService.isOn()) {
                 "Nothing was closed. On each app's page, press Force stop, then OK, then Clear cache."
