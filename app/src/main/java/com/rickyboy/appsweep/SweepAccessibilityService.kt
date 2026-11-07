@@ -144,7 +144,7 @@ class SweepAccessibilityService : AccessibilityService() {
             if (t.isNotEmpty()) out.add(if (id.isNotEmpty()) "$t [$id]" else t)
             for (i in 0 until n.childCount) walk(try { n.getChild(i) } catch (_: Exception) { null }, depth + 1)
         }
-        walk(root(), 0)
+        roots().forEach { walk(it, 0) }
         return out.joinToString(" | ")
     }
     private var overlay: View? = null
@@ -272,7 +272,7 @@ class SweepAccessibilityService : AccessibilityService() {
             return false
         }
 
-        var closed = !stopButton.isEnabled          // greyed out = already closed
+        var closed = !isEnabled(stopButton)          // greyed out = already closed
         if (forceStop && !closed) {
             val stopBounds = android.graphics.Rect()
             stopButton.getBoundsInScreen(stopBounds)
@@ -288,7 +288,7 @@ class SweepAccessibilityService : AccessibilityService() {
                 delay(600)
                 // Success if the confirm was pressed, or the Force stop button has now greyed out
                 val after = find(texts.forceStop)
-                closed = ok != null || (after != null && !after.isEnabled)
+                closed = ok != null || (after != null && !isEnabled(after))
             }
         }
         if (clearCache) clearCacheHere(label)
@@ -299,7 +299,7 @@ class SweepAccessibilityService : AccessibilityService() {
     private suspend fun clearCacheHere(label: String) {
         val direct = find(texts.clearCache)
         if (direct != null) {
-            if (direct.isEnabled && click(direct)) {
+            if (isEnabled(direct) && click(direct)) {
                 waitFor(1500) { findConfirm() }?.let { click(it) }
                 delay(400)
             }
@@ -312,7 +312,7 @@ class SweepAccessibilityService : AccessibilityService() {
         }
         if (!click(storage)) return
         val clear = waitFor(3000) { find(texts.clearCache) } ?: return
-        if (clear.isEnabled && click(clear)) {
+        if (isEnabled(clear) && click(clear)) {
             waitFor(1000) { findConfirm() }?.let { click(it) }
             delay(400)
         }
@@ -366,48 +366,77 @@ class SweepAccessibilityService : AccessibilityService() {
         null
     }
 
-    private fun onScreen(text: String): Boolean =
+    /** Every window's screen tree, the front one (e.g. a dialog) first. */
+    private fun roots(): List<AccessibilityNodeInfo> {
+        val out = ArrayList<AccessibilityNodeInfo>()
+        root()?.let { out.add(it) }
         try {
-            root()?.findAccessibilityNodeInfosByText(text)?.isNotEmpty() == true
+            windows?.forEach { w -> w.root?.let { r -> if (out.none { it == r }) out.add(r) } }
         } catch (_: Exception) {
-            false
         }
+        return out
+    }
 
-    /** Finds a node showing one of [options], preferring an exact match. */
-    private fun find(options: List<String>): AccessibilityNodeInfo? {
-        val r = root() ?: return null
-        for (t in options) {
-            val nodes = try {
-                r.findAccessibilityNodeInfosByText(t)
+    /**
+     * Walks the whole screen tree looking for matches. Done by hand because newer Settings
+     * screens (e.g. Android 16 on Motorola) don't answer Android's built-in text search.
+     */
+    private fun walkFind(limit: Int = 50, test: (AccessibilityNodeInfo) -> Boolean): List<AccessibilityNodeInfo> {
+        val out = ArrayList<AccessibilityNodeInfo>()
+        fun walk(n: AccessibilityNodeInfo?, depth: Int) {
+            if (n == null || depth > 45 || out.size >= limit) return
+            try {
+                if (test(n)) out.add(n)
+                for (i in 0 until n.childCount) walk(n.getChild(i), depth + 1)
             } catch (_: Exception) {
-                null
-            } ?: continue
-            val exact = nodes.firstOrNull {
-                it.text?.toString()?.trim()?.equals(t, ignoreCase = true) == true ||
-                    it.contentDescription?.toString()?.trim()?.equals(t, ignoreCase = true) == true
             }
-            if (exact != null) return exact
+        }
+        for (r in roots()) {
+            walk(r, 0)
+            if (out.isNotEmpty()) break   // front window wins
+        }
+        return out
+    }
+
+    private fun label(n: AccessibilityNodeInfo): String =
+        (n.text?.toString() ?: n.contentDescription?.toString() ?: "").trim()
+
+    private fun onScreen(text: String): Boolean =
+        walkFind(1) { label(it).contains(text, ignoreCase = true) }.isNotEmpty()
+
+    /** Finds a node whose text is exactly one of [options]. */
+    private fun find(options: List<String>): AccessibilityNodeInfo? {
+        for (t in options) {
+            walkFind(1) { label(it).equals(t, ignoreCase = true) }.firstOrNull()?.let { return it }
         }
         return null
     }
+
+    /** The tappable thing a label belongs to (the text itself or a parent button/row). */
+    private fun clickableOf(node: AccessibilityNodeInfo): AccessibilityNodeInfo {
+        var n: AccessibilityNodeInfo? = node
+        var depth = 0
+        while (n != null && !n.isClickable && depth < 6) {
+            n = n.parent
+            depth++
+        }
+        return n ?: node
+    }
+
+    /** Greyed-out check that works whether the text or its parent button carries the state. */
+    private fun isEnabled(node: AccessibilityNodeInfo): Boolean =
+        try { node.isEnabled && clickableOf(node).isEnabled } catch (_: Exception) { true }
 
     /**
      * The confirm button of the "Force stop?" box (phone dialog or TV confirm screen).
      * [pressed] is where the page's own Force stop button is, so it isn't mistaken for the confirm.
      */
     private fun findConfirm(pressed: android.graphics.Rect? = null): AccessibilityNodeInfo? {
-        val r = root() ?: return null
-        val byId: AccessibilityNodeInfo? = try {
-            r.findAccessibilityNodeInfosByViewId("android:id/button1")?.firstOrNull()
-        } catch (_: Exception) {
-            null
-        }
-        if (byId != null) return byId
+        walkFind(1) { it.viewIdResourceName == "android:id/button1" }.firstOrNull()?.let { return it }
         find(texts.confirm)?.let { return it }
         // Some phones label the confirm button "Force stop" too: take one that isn't the button we pressed
         for (t in texts.forceStop) {
-            val nodes = try { r.findAccessibilityNodeInfosByText(t) } catch (_: Exception) { null } ?: continue
-            for (n in nodes) {
+            for (n in walkFind(6) { label(it).equals(t, ignoreCase = true) }) {
                 val b = android.graphics.Rect()
                 n.getBoundsInScreen(b)
                 if (pressed == null || b != pressed) return n

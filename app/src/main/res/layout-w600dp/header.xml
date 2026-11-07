@@ -19,6 +19,8 @@
         android:orientation="vertical">
 
         <TextView
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:letterSpacing="0.15"
@@ -28,6 +30,8 @@
             android:textStyle="bold|italic" />
 
             <TextView
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
                 android:id="@+id/ramUsedText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -40,6 +44,8 @@
                 android:textStyle="bold|italic" />
 
             <TextView
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
                 android:id="@+id/ramFreeText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -49,6 +55,8 @@
                 android:textStyle="bold|italic" />
 
             <TextView
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
                 android:id="@+id/appsCountText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
