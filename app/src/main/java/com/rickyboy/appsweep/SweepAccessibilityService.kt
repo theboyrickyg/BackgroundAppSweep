@@ -333,6 +333,75 @@ class SweepAccessibilityService : AccessibilityService() {
         }
     }
 
+    // ---------- Automatic Pro pairing (phones) ----------
+
+    /** Opens Wireless debugging, reads the 6-digit pairing code off the screen and pairs. */
+    fun autoPair(onResult: (String?) -> Unit): Boolean {
+        if (busy) return false
+        busy = true
+        scope.launch {
+            val error = try { runAutoPair() } catch (e: Exception) { "Something went wrong. Try again." }
+            withContext(Dispatchers.Main) {
+                repeat(3) { performGlobalAction(GLOBAL_ACTION_BACK); delay(300) }
+                startActivity(
+                    Intent(this@SweepAccessibilityService, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                )
+                onResult(error)
+            }
+            busy = false
+        }
+        return true
+    }
+
+    private suspend fun runAutoPair(): String? {
+        withContext(Dispatchers.Main) {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+        delay(1200)
+        val wd = findWithScroll(pairTexts.wireless) ?: return "Couldn't find Wireless debugging. Is Developer options switched on?"
+        click(wd)
+        delay(1200)
+        // Switch it on if it's off
+        val main = walkFind(4) { it.isCheckable }.firstOrNull()
+        if (main != null && !main.isChecked) {
+            click(main)
+            delay(1200)
+            waitFor(2500) { find(pairTexts.allow) ?: findConfirm() }?.let { click(it); delay(1200) }
+        }
+        val pair = findWithScroll(pairTexts.pairCode) ?: return "Couldn't find \"Pair device with pairing code\". Is Wi-Fi on?"
+        click(pair)
+        val code: String = waitFor<String>(5000) { _ ->
+            val node: AccessibilityNodeInfo? = walkFind(1) { n ->
+                val t = label(n)
+                t.length <= 9 && t.count { c -> c.isDigit() } == 6 && t.all { c -> c.isDigit() || c == ' ' }
+            }.firstOrNull()
+            if (node == null) null else label(node).filter { c -> c.isDigit() }
+        } ?: return "Couldn't read the pairing code from the screen."
+        // The pairing screen must stay open while pairing
+        return withContext(Dispatchers.IO) { Adb.pair(applicationContext, code) }
+    }
+
+    private inner class PairTexts {
+        val wireless = settingsStrings(listOf("enable_adb_wireless", "adb_wireless_settings"), listOf("Wireless debugging"))
+        val pairCode = settingsStrings(listOf("adb_pair_method_code_title"), listOf("Pair device with pairing code"))
+        val allow = settingsStrings(listOf("adb_wireless_debugging_allow", "allow"), listOf("Allow", "ALLOW"))
+    }
+
+    private val pairTexts by lazy { PairTexts() }
+
+    /** find(), scrolling down the page if it isn't on screen yet. */
+    private suspend fun findWithScroll(options: List<String>, maxScrolls: Int = 10): AccessibilityNodeInfo? {
+        for (i in 0 until maxScrolls) {
+            val hit: AccessibilityNodeInfo? = find(options)
+            if (hit != null) return hit
+            val scroller: AccessibilityNodeInfo = walkFind(1) { n -> n.isScrollable }.firstOrNull() ?: return null
+            scroller.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            delay(450)
+        }
+        return find(options)
+    }
+
     // ---------- Finding and pressing buttons ----------
 
     /** Button wording read from the device's own Settings app (so it works in any language). */

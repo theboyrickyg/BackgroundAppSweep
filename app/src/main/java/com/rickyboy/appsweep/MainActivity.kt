@@ -208,7 +208,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateMemory()
-        if (awaitingStep > 0 && setupChoice == "easy" && !SweepAccessibilityService.isEnabledInSettings(this)) {
+        if (awaitingStep > 0 && (setupChoice == "easy" || pairHelper) && !SweepAccessibilityService.isEnabledInSettings(this)) {
             easyStep = awaitingStep
         }
         awaitingStep = -1
@@ -241,14 +241,15 @@ class MainActivity : AppCompatActivity() {
             return
         }
         // Easy mode is on and Pro has never been set up: nothing to connect
-        if (!userAsked && SweepAccessibilityService.isOn() && !Adb.hasWorkedBefore(this) && !Shell.shizukuUsable()) {
+        if (!userAsked && setupChoice != "pro" && SweepAccessibilityService.isOn() && !Adb.hasWorkedBefore(this) && !Shell.shizukuUsable()) {
             onStatus(Shell.Status.READY)
             return
         }
         if (userAsked) onStatus(Shell.Status.CONNECTING)
         setupJob = lifecycleScope.launch {
             var status = Shell.ensureConnected(applicationContext, userAsked)
-            if (status != Shell.Status.READY && !userAsked && (SweepAccessibilityService.isOn() || isTv)) {
+            if (status != Shell.Status.READY && !userAsked && (SweepAccessibilityService.isOn() || isTv) &&
+                (setupChoice != "pro" || Adb.hasWorkedBefore(applicationContext))) {
                 status = Shell.Status.READY // fall back to Easy mode
             }
             onStatus(status)
@@ -279,6 +280,16 @@ class MainActivity : AppCompatActivity() {
             if (choice == "easy") showEasySetup() else showChoice()
             clearList()
             return
+        }
+        if (!isReady && status != Shell.Status.CONNECTING && pairHelper && !isTv) {
+            if (SweepAccessibilityService.isOn()) {
+                pairHelper = false
+                autoPairNow = true          // switched on: go straight into automatic pairing
+            } else {
+                showEasySetup()
+                clearList()
+                return
+            }
         }
         if (!isReady) {
             linkButton.visibility = View.VISIBLE
@@ -336,6 +347,9 @@ class MainActivity : AppCompatActivity() {
                         "Write down the 6-digit code, press HOME on the remote (not Back), " +
                         "open App Closer again, type the code below and press Pair."
                 } else {
+                    "Easiest: press \"★ Pair automatically\" and App Closer finds and enters the code for you." +
+                        (if (SweepAccessibilityService.isOn()) "" else " (The first time, it asks you to switch App Closer on in Accessibility. One time only.)") +
+                        "\n\nOr do it yourself:\n" +
                     "Step 3 of 3: pair the app once.\n" +
                         "1. Press \"Start pairing\" below.\n" +
                         "2. In Wireless debugging, tap \"Pair device with pairing code\".\n" +
@@ -354,6 +368,7 @@ class MainActivity : AppCompatActivity() {
                 statusButton2.visibility = View.VISIBLE
                 statusButton2.text = "Connect"
                 statusButton2.setOnClickListener { checkConnection(userAsked = true) }
+                if (!isTv) offerAutoPair()
             }
             Shell.Status.CONNECTING -> {
                 statusText.text = "Connecting…\n\nIf a box pops up asking \"Allow debugging?\", " +
@@ -419,6 +434,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Pro setup is switching on Accessibility so it can find and enter the pairing code itself. */
+    private var pairHelper: Boolean
+        get() = prefs.getBoolean("pair_helper", false)
+        set(v) { prefs.edit().putBoolean("pair_helper", v).apply() }
+    private var autoPairNow = false
+
     private var easyStep: Int
         get() = prefs.getInt("easy_step", 1)
         set(v) { prefs.edit().putInt("easy_step", v).apply() }
@@ -434,6 +455,7 @@ class MainActivity : AppCompatActivity() {
      * that order: try → unlock → switch on.
      */
     private fun showEasySetup() {
+        val title = if (pairHelper) "PRO SETUP · TURN ON AUTO-PAIRING" else "EASY SETUP"
         statusCard.visibility = View.VISIBLE
         codeRow.visibility = View.GONE
         statusButton.visibility = View.VISIBLE
@@ -441,10 +463,11 @@ class MainActivity : AppCompatActivity() {
         linkButton.visibility = View.VISIBLE
 
         if (SweepAccessibilityService.isEnabledInSettings(this) && !SweepAccessibilityService.isOn()) {
-            statusText.text = "Nearly there… starting up.\n\n" +
+            statusText.text = (if (pairHelper) "Switched on ✓ Starting automatic pairing…\n\n" else "Nearly there… starting up.\n\n") +
                 "If this doesn't change in a few seconds, switch App Closer off and on again in Accessibility."
             statusButton.visibility = View.GONE
             linkButton.visibility = View.GONE
+            statusCard.postDelayed({ if (!isFinishing) checkConnection(userAsked = false) }, 1500)
             return
         }
 
@@ -454,7 +477,7 @@ class MainActivity : AppCompatActivity() {
 
         when (step) {
             1 -> {
-                statusText.text = "EASY SETUP · STEP 1 OF 3\nTry to switch on App Closer\n\n" +
+                statusText.text = "$title · STEP 1 OF 3\nTry to switch on App Closer\n\n" +
                     "Android blocks this the first time. That's expected, and it unlocks the next step.\n\n" +
                     "1. Tap \"Go to Accessibility\" below.\n" +
                     "2. Tap App Closer (under Downloaded apps).\n" +
@@ -468,14 +491,10 @@ class MainActivity : AppCompatActivity() {
                 statusButton2.visibility = View.VISIBLE
                 statusButton2.text = "Next step →"
                 statusButton2.setOnClickListener { goEasyStep(2) }
-                linkButton.text = "← Back to setup choice"
-                linkButton.setOnClickListener {
-                    setupChoice = null
-                    showChoice()
-                }
+                backToChoiceOrPairing()
             }
             2 -> {
-                statusText.text = "EASY SETUP · STEP 2 OF 3\nAllow restricted settings\n\n" +
+                statusText.text = "$title · STEP 2 OF 3\nAllow restricted settings\n\n" +
                     "1. Tap \"Open App info\" below.\n" +
                     "2. Tap the three dots ⋮ in the TOP RIGHT corner.\n" +
                     "3. Tap \"Allow restricted settings\".\n" +
@@ -494,14 +513,15 @@ class MainActivity : AppCompatActivity() {
                 linkButton.setOnClickListener { goEasyStep(1) }
             }
             else -> {
-                statusText.text = (if (needsUnlock) "EASY SETUP · STEP 3 OF 3\n" else "EASY SETUP\n") +
+                statusText.text = (if (needsUnlock) "$title · STEP 3 OF 3\n" else "$title\n") +
                     "Switch on App Closer\n\n" +
                     "1. Tap \"Go to Accessibility\" below.\n" +
                     (if (isTv) "2. Choose App Closer (under Services or Downloaded services).\n" +
                         "3. Switch it on and choose OK.\n"
                     else "2. Tap App Closer (under Downloaded apps).\n" +
                         "3. Turn on \"Use App Closer\" and tap Allow.\n") +
-                    "4. Press Back to return here. You're done!"
+                    (if (pairHelper) "4. Press Back to return here. App Closer then pairs by itself."
+                    else "4. Press Back to return here. You're done!")
                 statusButton.text = "Go to Accessibility"
                 statusButton.setOnClickListener {
                     awaitingStep = 0
@@ -511,15 +531,27 @@ class MainActivity : AppCompatActivity() {
                     linkButton.text = "← Back to step 2"
                     linkButton.setOnClickListener { goEasyStep(2) }
                 } else {
-                    linkButton.text = "← Back to setup choice"
-                    linkButton.setOnClickListener {
-                        setupChoice = null
-                        showChoice()
-                    }
+                    backToChoiceOrPairing()
                 }
             }
         }
         statusButton.requestFocus()
+    }
+
+    private fun backToChoiceOrPairing() {
+        if (pairHelper) {
+            linkButton.text = "← Back to pairing"
+            linkButton.setOnClickListener {
+                pairHelper = false
+                checkConnection(userAsked = false)
+            }
+        } else {
+            linkButton.text = "← Back to setup choice"
+            linkButton.setOnClickListener {
+                setupChoice = null
+                showChoice()
+            }
+        }
     }
 
 
@@ -529,6 +561,43 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(action, Uri.parse(uri)))
         } catch (_: ActivityNotFoundException) {
             openSettings(Settings.ACTION_SETTINGS)
+        }
+    }
+
+    /**
+     * Phones: if App Closer's Accessibility switch is on, it can open Wireless debugging, read the
+     * 6-digit code and pair by itself.
+     */
+    private fun offerAutoPair() {
+        // automatic pairing becomes the main button; doing it by hand is the second
+        statusButton2.visibility = View.VISIBLE
+        statusButton2.text = "Enter the code myself"
+        statusButton2.setOnClickListener { startPhonePairing() }
+        statusButton.text = "★ Pair automatically"
+        statusButton.setOnClickListener {
+            if (!SweepAccessibilityService.isOn()) {
+                // needs App Closer's Accessibility switch to read the code: switch it on first
+                pairHelper = true
+                easyStep = 1
+                showEasySetup()
+                return@setOnClickListener
+            }
+            val svc = SweepAccessibilityService.instance ?: return@setOnClickListener
+            toast("Setting up… don't touch the screen for a few seconds")
+            val started = svc.autoPair { error ->
+                if (error == null) {
+                    toast("Paired ✓ Connecting…")
+                    checkConnection(userAsked = true)
+                } else {
+                    toast(error)
+                }
+            }
+            if (!started) toast("App Closer is busy. Try again in a moment.")
+        }
+        statusButton.requestFocus()
+        if (autoPairNow) {
+            autoPairNow = false
+            statusButton.postDelayed({ if (!isFinishing) statusButton.performClick() }, 700)
         }
     }
 
