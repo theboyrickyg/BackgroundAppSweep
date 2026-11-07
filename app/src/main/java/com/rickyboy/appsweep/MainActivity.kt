@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var allCleanView: View
     private lateinit var closeAppButton: Button
     private var sweptThisSession = false
+    private var awaitingRestricted = false
     private lateinit var statClosed: TextView
     private lateinit var statRam: TextView
     private lateinit var statCache: TextView
@@ -178,6 +179,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateMemory()
+        if (awaitingRestricted) {
+            awaitingRestricted = false
+            if (setupChoice == "easy" && !ready) showEasySetup()
+        }
         checkConnection(userAsked = false)
         if (ready && !busy) refresh()
     }
@@ -336,7 +341,7 @@ class MainActivity : AppCompatActivity() {
     private fun showChoice() {
         statusCard.visibility = View.VISIBLE
         statusText.text = "Welcome! Choose how to set up App Closer:\n\n" +
-            "EASY (recommended)\nSwitch on one setting. No codes, nothing technical. " +
+            "EASY (recommended)\nTwo quick steps in Settings, shown one at a time. No codes, nothing technical. " +
             "Closing apps takes a few seconds each, with a progress screen while it works.\n\n" +
             "PRO\nFor confident users. Uses Developer options. Closes everything instantly and silently, " +
             "shows RAM and CPU for every app, clears all caches at once and can block apps auto-starting."
@@ -358,48 +363,93 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Easy setup: switch on the accessibility service. */
+    /**
+     * Android 13+ blocks Accessibility for apps installed from a link until "Allow restricted
+     * settings" is turned on. true = allowed, false = still blocked, null = can't tell on this phone.
+     */
+    private fun restrictedSettingsAllowed(): Boolean? {
+        if (isTv || Build.VERSION.SDK_INT < 33) return true
+        if (SweepAccessibilityService.isEnabledInSettings(this)) return true
+        return try {
+            val ops = getSystemService(android.app.AppOpsManager::class.java)
+            val mode = ops.unsafeCheckOpNoThrow(
+                "android:access_restricted_settings", applicationInfo.uid, packageName
+            )
+            mode != android.app.AppOpsManager.MODE_ERRORED && mode != android.app.AppOpsManager.MODE_IGNORED
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Easy setup, one step at a time. */
     private fun showEasySetup() {
         statusCard.visibility = View.VISIBLE
         codeRow.visibility = View.GONE
-        val switchedOnButNotRunning = SweepAccessibilityService.isEnabledInSettings(this) && !SweepAccessibilityService.isOn()
-        statusText.text = when {
-            switchedOnButNotRunning ->
-                "Nearly there… starting up.\n\nIf this doesn't change in a few seconds, switch App Closer off and on again in Accessibility."
-            isTv ->
-                "Easy setup: one switch\n\n" +
-                    "1. Press \"Open Accessibility\".\n" +
-                    "2. Choose App Closer (it may be under Services or Downloaded services).\n" +
-                    "3. Switch it on and choose OK.\n" +
-                    "4. Press Back to return here."
-            else ->
-                "Easy setup: one switch\n\n" +
-                    "1. Press \"Open Accessibility\".\n" +
-                    "2. Tap App Closer (it may be under Installed apps or Downloaded apps).\n" +
-                    "3. Switch it on and tap Allow.\n" +
-                    "4. Come back here.\n\n" +
-                    "Switch greyed out? Android does this for apps installed from a link. " +
-                    "Tap \"Fix greyed-out switch\" below, then the ⋮ menu (top right) → Allow restricted settings, and try again."
-        }
-        statusButton.visibility = View.VISIBLE
-        statusButton.text = "Open Accessibility"
-        statusButton.setOnClickListener { openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS) }
-        statusButton2.visibility = View.VISIBLE
-        statusButton2.text = "Use Pro setup instead"
-        statusButton2.setOnClickListener {
+        statusButton2.visibility = View.GONE
+        // small link at the bottom for anyone who'd rather use Pro
+        linkButton.visibility = View.VISIBLE
+        linkButton.text = "Use Pro setup instead"
+        linkButton.setOnClickListener {
             setupChoice = "pro"
             checkConnection(userAsked = false)
         }
-        if (!isTv && Build.VERSION.SDK_INT >= 33) {
-            linkButton.visibility = View.VISIBLE
-            linkButton.text = "Fix greyed-out switch"
-            linkButton.setOnClickListener {
+
+        if (SweepAccessibilityService.isEnabledInSettings(this) && !SweepAccessibilityService.isOn()) {
+            statusText.text = "Nearly there… starting up.\n\n" +
+                "If this doesn't change in a few seconds, switch App Closer off and on again in Accessibility."
+            statusButton.visibility = View.GONE
+            return
+        }
+
+        val allowed = restrictedSettingsAllowed() ?: prefs.getBoolean("restricted_step_done", false)
+        statusButton.visibility = View.VISIBLE
+
+        if (!allowed) {
+            // ---- Step 1: unlock ----
+            statusText.text = "EASY SETUP · STEP 1 OF 2\n" +
+                "Allow restricted settings\n\n" +
+                "Android locks this setting for apps that aren't from the Play Store, so you unlock it first:\n\n" +
+                "1. Tap the \"Allow restricted settings\" button below.\n" +
+                "2. On the page that opens, tap the three dots ⋮ in the TOP RIGHT corner.\n" +
+                "3. Tap \"Allow restricted settings\".\n" +
+                "4. Enter your PIN or fingerprint if asked.\n" +
+                "5. Press Back to return here."
+            statusButton.text = "Allow restricted settings"
+            statusButton.setOnClickListener {
+                awaitingRestricted = true
                 openSettingsUri(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName")
             }
+            if (restrictedSettingsAllowed() == null) {
+                // this phone won't say whether it's done, so let the person move on themselves
+                statusButton2.visibility = View.VISIBLE
+                statusButton2.text = "Done, next step"
+                statusButton2.setOnClickListener {
+                    prefs.edit().putBoolean("restricted_step_done", true).apply()
+                    showEasySetup()
+                }
+            }
         } else {
-            linkButton.visibility = View.GONE
+            // ---- Step 2: switch it on ----
+            statusText.text = if (isTv) {
+                "EASY SETUP\nSwitch on App Closer\n\n" +
+                    "1. Press \"Switch on App Closer\" below.\n" +
+                    "2. Choose App Closer (under Services or Downloaded services).\n" +
+                    "3. Switch it on and choose OK.\n" +
+                    "4. Press Back to return here."
+            } else {
+                (if (Build.VERSION.SDK_INT >= 33) "EASY SETUP · STEP 2 OF 2\n" else "EASY SETUP\n") +
+                    "Switch on App Closer\n\n" +
+                    "1. Tap the \"Switch on App Closer\" button below.\n" +
+                    "2. Tap App Closer (under Downloaded apps).\n" +
+                    "3. Turn on \"Use App Closer\" and tap Allow.\n" +
+                    "4. Press Back to return here."
+            }
+            statusButton.text = "Switch on App Closer"
+            statusButton.setOnClickListener { openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS) }
         }
         statusButton.requestFocus()
     }
+
 
     private fun openSettingsUri(action: String, uri: String) {
         try {
