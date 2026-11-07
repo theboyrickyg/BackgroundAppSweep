@@ -134,7 +134,14 @@ class MainActivity : AppCompatActivity() {
         resultRow = findViewById(R.id.resultRow)
         allCleanView = findViewById(R.id.allCleanView)
         closeAppButton = findViewById(R.id.closeAppButton)
-        closeAppButton.setOnClickListener { finishAndRemoveTask() }
+        closeAppButton.setOnClickListener {
+            // straight to the home screen, so nothing App Closer opened is left showing
+            try {
+                startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (_: Exception) {
+            }
+            finishAndRemoveTask()
+        }
         tvAutoButton = findViewById(R.id.tvAutoButton)
         tvAutoButton.setOnClickListener { showTvAutoSteps() }
         statClosed = findViewById(R.id.statClosed)

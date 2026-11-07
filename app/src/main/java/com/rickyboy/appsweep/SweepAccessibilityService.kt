@@ -151,6 +151,9 @@ class SweepAccessibilityService : AccessibilityService() {
         return out.joinToString(" | ")
     }
     private var overlay: View? = null
+    private val isTv by lazy { packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) }
+    private val tvRows = HashMap<String, View>()
+    private var tvRemaining = 0
 
     // ---------- Service lifecycle ----------
 
@@ -207,12 +210,14 @@ class SweepAccessibilityService : AccessibilityService() {
             notes = 0
             report.append("Phone: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE}\n\n")
             publish(true, 2, "")
-            withContext(Dispatchers.Main) { showOverlay() }
+            withContext(Dispatchers.Main) { showOverlay(apps) }
             try {
                 apps.forEachIndexed { i, (pkg, label) ->
                     publish(true, 3 + 92 * i / apps.size.coerceAtLeast(1), label)
                     updateOverlay(i + 1, apps.size, label)
-                    if (processApp(pkg, label, forceStop, clearCache)) {
+                    val ok = processApp(pkg, label, forceStop, clearCache)
+                    withContext(Dispatchers.Main) { removeTvRow(pkg) }
+                    if (ok) {
                         closed++
                         if (forceStop) {
                             OpenedApps.remove(applicationContext, listOf(pkg))
@@ -224,6 +229,7 @@ class SweepAccessibilityService : AccessibilityService() {
             } catch (_: Exception) {
             }
             publish(true, 98, "")
+            withContext(Dispatchers.Main) { closeSettingsPage() }
             delay(3000)   // let Android reclaim memory before the "after" reading
             val result = SweepResult(
                 closed = closed,
@@ -486,10 +492,64 @@ class SweepAccessibilityService : AccessibilityService() {
 
     // ---------- Full-screen progress card ----------
 
-    private fun showOverlay() {
+    /** Presses Back until the Settings page App Closer opened is gone. */
+    private suspend fun closeSettingsPage() {
+        repeat(3) {
+            val pkg = try { rootInActiveWindow?.packageName?.toString() } catch (_: Exception) { null }
+            if (pkg == null || pkg !in SETTINGS_PACKAGES) return
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            delay(400)
+        }
+    }
+
+    private fun removeTvRow(pkg: String) {
+        val row = tvRows.remove(pkg) ?: return
+        tvRemaining--
+        row.animate().alpha(0f).setDuration(250).withEndAction {
+            (row.parent as? android.view.ViewGroup)?.removeView(row)
+        }.start()
+        overlay?.findViewById<TextView>(R.id.overlayCount)?.text = "Apps left to clean: $tvRemaining"
+    }
+
+    /** TV cover: one row per app (icon + name), like App Closer's own list. */
+    private fun fillTvList(v: View, apps: List<Pair<String, String>>) {
+        val list = v.findViewById<android.widget.LinearLayout>(R.id.overlayList) ?: return
+        val dp = resources.displayMetrics.density
+        tvRows.clear()
+        tvRemaining = apps.size
+        v.findViewById<TextView>(R.id.overlayCount)?.text = "Apps left to clean: $tvRemaining"
+        for ((pkg, label) in apps) {
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setBackgroundResource(R.drawable.bg_row)
+                setPadding((12 * dp).toInt(), (10 * dp).toInt(), (12 * dp).toInt(), (10 * dp).toInt())
+            }
+            val icon = android.widget.ImageView(this).apply {
+                setImageDrawable(try { packageManager.getApplicationIcon(pkg) } catch (_: Exception) { null })
+            }
+            row.addView(icon, android.widget.LinearLayout.LayoutParams((40 * dp).toInt(), (40 * dp).toInt()))
+            val name = TextView(this).apply {
+                text = label
+                textSize = 18f
+                setTextColor(android.graphics.Color.WHITE)
+                setPadding((14 * dp).toInt(), 0, 0, 0)
+            }
+            row.addView(name)
+            val lp = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = (6 * dp).toInt() }
+            list.addView(row, lp)
+            tvRows[pkg] = row
+        }
+    }
+
+    private fun showOverlay(apps: List<Pair<String, String>> = emptyList()) {
         if (overlay != null) return
         try {
-            val v = LayoutInflater.from(this).inflate(R.layout.overlay_sweep, null)
+            val v = LayoutInflater.from(this).inflate(if (isTv) R.layout.overlay_sweep_tv else R.layout.overlay_sweep, null)
+            if (isTv) fillTvList(v, apps)
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -511,7 +571,8 @@ class SweepAccessibilityService : AccessibilityService() {
     private fun updateOverlay(index: Int, total: Int, label: String) {
         val v = overlay ?: return
         v.post {
-            v.findViewById<TextView>(R.id.overlayStatus)?.text = "Closing $index of $total"
+            v.findViewById<TextView>(R.id.overlayStatus)?.text =
+                if (isTv) "Cleaning $label ($index of $total)" else "Closing $index of $total"
             v.findViewById<TextView>(R.id.overlayApp)?.text = label
         }
     }
