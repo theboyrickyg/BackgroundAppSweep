@@ -45,11 +45,11 @@ class CleanGaugeView @JvmOverloads constructor(
     private val headPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val bigFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE; textAlign = Paint.Align.CENTER; textSize = 70f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD_ITALIC)
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
     private val smallFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER; textSize = 28f; letterSpacing = 0.12f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD_ITALIC)
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
 
     init {

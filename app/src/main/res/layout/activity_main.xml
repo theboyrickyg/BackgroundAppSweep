@@ -149,7 +149,7 @@
             android:text="@string/sweep_button"
             android:textColor="@color/text_main"
             android:textSize="19sp"
-            android:textStyle="bold|italic" />
+            android:textStyle="bold" />
 
         <!-- Shown for a few seconds after a sweep, in place of the button -->
         <LinearLayout
@@ -176,7 +176,7 @@
                 android:text="All clean!"
                 android:textColor="@color/text_main"
                 android:textSize="28sp"
-                android:textStyle="bold|italic" />
+                android:textStyle="bold" />
         </LinearLayout>
     </FrameLayout>
 
@@ -209,7 +209,7 @@
                 android:text="0"
                 android:textColor="@color/text_main"
                 android:textSize="20sp"
-                android:textStyle="bold|italic" />
+                android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -242,7 +242,7 @@
                 android:text="0"
                 android:textColor="@color/text_main"
                 android:textSize="20sp"
-                android:textStyle="bold|italic" />
+                android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -275,7 +275,7 @@
                 android:text="0"
                 android:textColor="@color/text_main"
                 android:textSize="20sp"
-                android:textStyle="bold|italic" />
+                android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -298,7 +298,7 @@
         android:gravity="center"
         android:textColor="@color/text_dim"
         android:textSize="13sp"
-        android:textStyle="italic"
+        android:textStyle="normal"
         android:visibility="gone" />
 
     <!-- Appears once everything is clean: leaves the app -->
@@ -326,7 +326,7 @@
         android:gravity="center"
         android:textColor="@color/neon_cyan"
         android:textSize="13sp"
-        android:textStyle="bold|italic" />
+        android:textStyle="bold" />
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -358,7 +358,7 @@
         android:text="Biggest RAM users first · Tap an app for options · Hold to close it"
         android:textColor="@color/text_dim"
         android:textSize="12sp"
-        android:textStyle="italic" />
+        android:textStyle="normal" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/appList"

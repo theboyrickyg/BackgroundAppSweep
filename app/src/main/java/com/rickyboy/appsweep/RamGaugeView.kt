@@ -57,11 +57,11 @@ class RamGaugeView @JvmOverloads constructor(
     private val needleDark = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(15, 15, 20) }
     private val needleLight = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(232, 234, 240) }
     private val bigFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE; textSize = 92f; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD_ITALIC)
+        color = Color.WHITE; textSize = 92f; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
     private val smallFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.rgb(229, 57, 53); textSize = 34f; letterSpacing = 0.12f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD_ITALIC)
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
     private val path = Path()
 
