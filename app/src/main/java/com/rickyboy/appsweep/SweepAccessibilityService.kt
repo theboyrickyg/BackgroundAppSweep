@@ -29,7 +29,9 @@ object EasySweep {
         val running: Boolean = false,
         val percent: Int = 0,
         val current: String = "",
-        val result: SweepResult? = null
+        val result: SweepResult? = null,
+        /** What Easy mode saw when it couldn't press a button (to send to the developer). */
+        val report: String = ""
     )
 
     val state = MutableStateFlow(State())
@@ -125,6 +127,26 @@ class SweepAccessibilityService : AccessibilityService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     @Volatile
     private var busy = false
+    private val report = StringBuilder()
+    private var notes = 0
+
+    private fun note(msg: String) {
+        if (notes++ < 4) report.append(msg).append("\n\n")
+    }
+
+    /** Words visible on screen right now (for the report). */
+    private fun screenTexts(): String {
+        val out = ArrayList<String>()
+        fun walk(n: AccessibilityNodeInfo?, depth: Int) {
+            if (n == null || depth > 25 || out.size >= 45) return
+            val t = n.text?.toString()?.trim().orEmpty()
+            val id = n.viewIdResourceName?.substringAfter(":id/").orEmpty()
+            if (t.isNotEmpty()) out.add(if (id.isNotEmpty()) "$t [$id]" else t)
+            for (i in 0 until n.childCount) walk(try { n.getChild(i) } catch (_: Exception) { null }, depth + 1)
+        }
+        walk(root(), 0)
+        return out.joinToString(" | ")
+    }
     private var overlay: View? = null
 
     // ---------- Service lifecycle ----------
@@ -178,6 +200,9 @@ class SweepAccessibilityService : AccessibilityService() {
             val ramBefore = sweeper.availableRam()
             val diskBefore = sweeper.freeStorage()
             var closed = 0
+            report.setLength(0)
+            notes = 0
+            report.append("Phone: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE}\n\n")
             publish(true, 2, "")
             withContext(Dispatchers.Main) { showOverlay() }
             try {
@@ -196,7 +221,10 @@ class SweepAccessibilityService : AccessibilityService() {
                 ramFreed = (sweeper.availableRam() - ramBefore).coerceAtLeast(0),
                 cacheFreed = (sweeper.freeStorage() - diskBefore).coerceAtLeast(0)
             )
-            EasySweep.state.value = EasySweep.State(running = false, percent = 100, current = "", result = result)
+            EasySweep.state.value = EasySweep.State(
+                running = false, percent = 100, current = "", result = result,
+                report = if (notes > 0) report.toString() else ""
+            )
             withContext(Dispatchers.Main) {
                 when (finish) {
                     Finish.OPEN_APP -> startActivity(
@@ -215,10 +243,13 @@ class SweepAccessibilityService : AccessibilityService() {
 
     private fun publish(running: Boolean, pct: Int, current: String) {
         EasySweep.state.value = EasySweep.State(running = running, percent = pct, current = current, result = null)
-        overlayGauge()?.post { overlayGauge()?.setProgress(pct.toFloat()) }
+        overlayProgress()?.post { overlayProgress()?.progress = pct }
     }
 
-    /** Opens the app's App info page and presses the buttons. Returns true if it was force-stopped. */
+    /**
+     * Opens the app's App info page and presses the buttons.
+     * Returns true if the app is closed afterwards (including if it was already closed).
+     */
     private suspend fun processApp(pkg: String, label: String, forceStop: Boolean, clearCache: Boolean): Boolean {
         withContext(Dispatchers.Main) {
             startActivity(
@@ -235,24 +266,37 @@ class SweepAccessibilityService : AccessibilityService() {
         val stopButton = waitFor(4000) {
             val node = find(texts.forceStop)
             if (node != null && (onScreen(label) || it > 2500)) node else null
-        } ?: return false
+        }
+        if (stopButton == null) {
+            note("$label: couldn't find the Force stop button.\nScreen showed: ${screenTexts()}")
+            return false
+        }
 
-        var stopped = false
-        if (forceStop && stopButton.isEnabled) {
-            if (click(stopButton)) {
-                val ok = waitFor(2500) { findConfirm() }
-                if (ok != null && click(ok)) {
-                    stopped = true
-                    delay(500)
+        var closed = !stopButton.isEnabled          // greyed out = already closed
+        if (forceStop && !closed) {
+            val stopBounds = android.graphics.Rect()
+            stopButton.getBoundsInScreen(stopBounds)
+            if (!click(stopButton)) {
+                note("$label: Force stop button wouldn't press.")
+            } else {
+                val ok = waitFor(2500) { findConfirm(stopBounds) }
+                if (ok == null) {
+                    note("$label: no confirm box found after pressing Force stop.\nScreen showed: ${screenTexts()}")
+                } else {
+                    click(ok)
                 }
+                delay(600)
+                // Success if the confirm was pressed, or the Force stop button has now greyed out
+                val after = find(texts.forceStop)
+                closed = ok != null || (after != null && !after.isEnabled)
             }
         }
-        if (clearCache) clearCacheHere()
-        return stopped
+        if (clearCache) clearCacheHere(label)
+        return closed
     }
 
     /** TV: "Clear cache" is on the App info page. Phone: it's inside "Storage & cache". */
-    private suspend fun clearCacheHere() {
+    private suspend fun clearCacheHere(label: String) {
         val direct = find(texts.clearCache)
         if (direct != null) {
             if (direct.isEnabled && click(direct)) {
@@ -261,7 +305,11 @@ class SweepAccessibilityService : AccessibilityService() {
             }
             return
         }
-        val storage = find(texts.storage) ?: return
+        val storage = find(texts.storage)
+        if (storage == null) {
+            note("$label: couldn't find Clear cache or Storage.\nScreen showed: ${screenTexts()}")
+            return
+        }
         if (!click(storage)) return
         val clear = waitFor(3000) { find(texts.clearCache) } ?: return
         if (clear.isEnabled && click(clear)) {
@@ -343,15 +391,29 @@ class SweepAccessibilityService : AccessibilityService() {
         return null
     }
 
-    /** The confirm button of the "Force stop?" box (phone dialog or TV confirm screen). */
-    private fun findConfirm(): AccessibilityNodeInfo? {
+    /**
+     * The confirm button of the "Force stop?" box (phone dialog or TV confirm screen).
+     * [pressed] is where the page's own Force stop button is, so it isn't mistaken for the confirm.
+     */
+    private fun findConfirm(pressed: android.graphics.Rect? = null): AccessibilityNodeInfo? {
         val r = root() ?: return null
         val byId: AccessibilityNodeInfo? = try {
             r.findAccessibilityNodeInfosByViewId("android:id/button1")?.firstOrNull()
         } catch (_: Exception) {
             null
         }
-        return byId ?: find(texts.confirm)
+        if (byId != null) return byId
+        find(texts.confirm)?.let { return it }
+        // Some phones label the confirm button "Force stop" too: take one that isn't the button we pressed
+        for (t in texts.forceStop) {
+            val nodes = try { r.findAccessibilityNodeInfosByText(t) } catch (_: Exception) { null } ?: continue
+            for (n in nodes) {
+                val b = android.graphics.Rect()
+                n.getBoundsInScreen(b)
+                if (pressed == null || b != pressed) return n
+            }
+        }
+        return null
     }
 
     private fun click(node: AccessibilityNodeInfo): Boolean {
@@ -401,13 +463,12 @@ class SweepAccessibilityService : AccessibilityService() {
             )
             (getSystemService(WINDOW_SERVICE) as WindowManager).addView(v, params)
             overlay = v
-            v.findViewById<CleanGaugeView>(R.id.overlayGauge)?.startCleaning()
         } catch (_: Exception) {
             overlay = null
         }
     }
 
-    private fun overlayGauge(): CleanGaugeView? = overlay?.findViewById(R.id.overlayGauge)
+    private fun overlayProgress(): android.widget.ProgressBar? = overlay?.findViewById(R.id.overlayProgress)
 
     private fun updateOverlay(index: Int, total: Int, label: String) {
         val v = overlay ?: return
@@ -420,7 +481,6 @@ class SweepAccessibilityService : AccessibilityService() {
     private fun hideOverlay() {
         val v = overlay ?: return
         try {
-            v.findViewById<CleanGaugeView>(R.id.overlayGauge)?.finish()
             (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(v)
         } catch (_: Exception) {
         }

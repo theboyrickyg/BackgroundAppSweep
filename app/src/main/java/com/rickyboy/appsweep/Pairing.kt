@@ -45,7 +45,7 @@ object PairingNotification {
             .build()
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_tile)
-            .setContentTitle("Background App Sweep setup")
+            .setContentTitle("App Closer setup")
             .setContentText(message)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setOnlyAlertOnce(false)
@@ -96,7 +96,7 @@ class PairingReceiver : BroadcastReceiver() {
             if (error == null) {
                 PairingNotification.showMessage(
                     app, "Paired ✓",
-                    "All set. Tap here to go back to Background App Sweep."
+                    "All set. Tap here to go back to App Closer."
                 )
             } else {
                 PairingNotification.showCodeBox(app, error)

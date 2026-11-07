@@ -1,8 +1,8 @@
 <resources>
-    <string name="app_name">Background App Sweep</string>
+    <string name="app_name">App Closer</string>
     <string name="sweep_button">CLOSE ALL &amp; CLEAR CACHE</string>
-    <string name="quick_sweep">Quick Sweep</string>
+    <string name="quick_sweep">Quick Close</string>
     <string name="quick_sweep_long">Close all apps &amp; clear cache</string>
     <string name="accessibility_summary">Closes background apps and clears caches for you</string>
-    <string name="accessibility_description">Background App Sweep uses this to close background apps and clear their caches when you press Close All. It opens each app\'s App info page and presses Force stop and Clear cache for you, exactly as you would yourself. It also notes which apps you open, so it knows what to close. It doesn\'t read, collect or send anything else.</string>
+    <string name="accessibility_description">App Closer uses this to close background apps and clear their caches when you press Close All. It opens each app\'s App info page and presses Force stop and Clear cache for you, exactly as you would yourself. It also notes which apps you open, so it knows what to close. It doesn\'t read, collect or send anything else.</string>
 </resources>

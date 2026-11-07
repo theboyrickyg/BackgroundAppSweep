@@ -2,49 +2,97 @@ package com.rickyboy.appsweep
 
 import android.animation.ValueAnimator
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.RectF
-import android.graphics.Shader
-import android.graphics.SweepGradient
+import android.graphics.Path
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.DecelerateInterpolator
+import kotlin.math.cos
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
-/** Neon speedometer-style dial showing % of RAM in use (matches the SpeedCheck gauges). */
+/**
+ * Left dial: the ram whose horn is the RAM gauge. Blue = used, green = free, with
+ * markings along the horn and a needle from the centre of the curl.
+ */
 class RamGaugeView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
-    private val cyan = Color.parseColor("#00F0FF")
-    private val pink = Color.parseColor("#FF2D95")
-    private val purple = Color.parseColor("#9D3CFF")
+    private val blue = intArrayOf(40, 140, 255)
+    private val green = intArrayOf(40, 205, 95)
 
-    private var shown = 0f      // what's drawn now (animates)
+    private val w = RamArt.RAM_W
+    private val h = RamArt.RAM_H
+    private val basePx = IntArray(w * h)
+    private val outPx: IntArray
+    private val tinted: Bitmap
+    private val hornIdx: IntArray     // pixel indexes that are horn
+    private val hornT: FloatArray     // position along the horn for each of those pixels
+    private val hornLum: FloatArray   // brightness of the horn texture there
+
+    private var shown = 0f            // percent drawn now (animates)
+    private var tintedFor = -1
     private var animator: ValueAnimator? = null
 
-    private val bezel = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-    private val face = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#0B0B16") }
-    private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; color = Color.parseColor("#1C1C2E")
+    private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private val blueText = Color.rgb(30, 120, 240)
+    private val greenText = Color.rgb(20, 175, 75)
+    private val hornNum = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER; textSize = 60f
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
-    private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
-    private val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#55FFFFFF") }
-    private val big = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE; textAlign = Paint.Align.CENTER
+    private val hornWord = Paint(hornNum).apply { textSize = 30f; letterSpacing = 0.08f }
+    private val hornNumOutline = Paint(hornNum).apply {
+        color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 11f; strokeJoin = Paint.Join.ROUND
+    }
+    private val hornWordOutline = Paint(hornWord).apply {
+        color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 8f; strokeJoin = Paint.Join.ROUND
+    }
+    private val needleDark = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(15, 15, 20) }
+    private val needleLight = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(232, 234, 240) }
+    private val bigFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE; textSize = 92f; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD_ITALIC)
+    }
+    private val smallFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(229, 57, 53); textSize = 34f; letterSpacing = 0.12f
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD_ITALIC)
     }
-    private val small = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = cyan; textAlign = Paint.Align.CENTER; letterSpacing = 0.15f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD_ITALIC)
-    }
-    private val oval = RectF()
+    private val path = Path()
 
     init {
-        setLayerType(LAYER_TYPE_SOFTWARE, null) // needed for the neon glow
+        val opts = BitmapFactory.Options().apply {
+            inScaled = false
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val base = BitmapFactory.decodeResource(resources, R.drawable.ram_base, opts)
+        base.getPixels(basePx, 0, w, 0, 0, w, h)
+        val tmap = BitmapFactory.decodeResource(resources, R.drawable.ram_tmap, opts)
+        val tPx = IntArray(w * h)
+        tmap.getPixels(tPx, 0, w, 0, 0, w, h)
+        tmap.recycle()
+
+        val idx = ArrayList<Int>()
+        for (i in tPx.indices) if (Color.red(tPx[i]) > 0) idx.add(i)
+        hornIdx = idx.toIntArray()
+        hornT = FloatArray(hornIdx.size)
+        hornLum = FloatArray(hornIdx.size)
+        for (k in hornIdx.indices) {
+            val i = hornIdx[k]
+            hornT[k] = (Color.red(tPx[i]) - 1) / 253f
+            val p = basePx[i]
+            val lum = (0.3f * Color.red(p) + 0.59f * Color.green(p) + 0.11f * Color.blue(p)) / 180f
+            hornLum[k] = lum.coerceIn(0.25f, 1.4f) * 1.05f
+        }
+        outPx = basePx.copyOf()
+        tinted = base.copy(Bitmap.Config.ARGB_8888, true)
+        base.recycle()
+        retint(0)
     }
 
     /** 0–100 */
@@ -52,68 +100,121 @@ class RamGaugeView @JvmOverloads constructor(
         val target = value.coerceIn(0f, 100f)
         animator?.cancel()
         animator = ValueAnimator.ofFloat(shown, target).apply {
-            duration = 700
+            duration = 800
             interpolator = DecelerateInterpolator()
-            addUpdateListener { shown = it.animatedValue as Float; invalidate() }
+            addUpdateListener {
+                shown = it.animatedValue as Float
+                val pct = shown.roundToInt()
+                if (pct != tintedFor) retint(pct)
+                invalidate()
+            }
             start()
         }
     }
 
+    private fun boundaryFor(pct: Int) =
+        RamArt.SCALE_START + pct / 100f * (RamArt.SCALE_END - RamArt.SCALE_START)
+
+    /** Paints the horn: blue up to the used amount, green after it, natural colour on the thin tip. */
+    private fun retint(pct: Int) {
+        tintedFor = pct
+        val boundary = boundaryFor(pct)
+        for (k in hornIdx.indices) {
+            val i = hornIdx[k]
+            val t = hornT[k]
+            if (t > RamArt.SCALE_END) {
+                outPx[i] = basePx[i]
+                continue
+            }
+            val c = if (t <= boundary) blue else green
+            val l = hornLum[k]
+            val a = Color.alpha(basePx[i])
+            outPx[i] = Color.argb(
+                a,
+                (c[0] * l).toInt().coerceIn(0, 255),
+                (c[1] * l).toInt().coerceIn(0, 255),
+                (c[2] * l).toInt().coerceIn(0, 255)
+            )
+        }
+        tinted.setPixels(outPx, 0, w, 0, 0, w, h)
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val w = MeasureSpec.getSize(widthMeasureSpec)
-        setMeasuredDimension(w, w) // always square
+        val width = MeasureSpec.getSize(widthMeasureSpec)
+        setMeasuredDimension(width, width * RamArt.DIAL_H / RamArt.DIAL_W)
+    }
+
+    override fun onDetachedFromWindow() {
+        animator?.cancel()
+        super.onDetachedFromWindow()
     }
 
     override fun onDraw(canvas: Canvas) {
-        val s = width.toFloat()
-        val c = s / 2
-        val stroke = s * 0.075f
+        val s = width.toFloat() / RamArt.DIAL_W
+        canvas.save()
+        canvas.scale(s, s)
 
-        // Chrome bezel
-        bezel.strokeWidth = s * 0.035f
-        bezel.shader = LinearGradient(0f, 0f, s, s,
-            intArrayOf(Color.parseColor("#F2F2F7"), Color.parseColor("#5A5A66"), Color.parseColor("#D8D8E0"), Color.parseColor("#3A3A44")),
-            null, Shader.TileMode.CLAMP)
-        val br = c - bezel.strokeWidth / 2
-        canvas.drawCircle(c, c, br, face)
-        canvas.drawCircle(c, c, br, bezel)
+        // Reading in the space above the ram (matches the apps bursting above the other ram)
+        canvas.drawText("${shown.roundToInt()}%", 24f, 120f, bigFill)
+        canvas.drawText("RAM USED", 28f, 168f, smallFill)
 
-        // Track + ticks
-        val r = c - s * 0.16f
-        oval.set(c - r, c - r, c + r, c + r)
-        track.strokeWidth = stroke
-        canvas.drawArc(oval, 135f, 270f, false, track)
-        for (i in 0..10) {
-            val a = Math.toRadians((135 + i * 27).toDouble())
-            val r1 = r - stroke * 1.1f
-            val r2 = r1 - s * (if (i % 5 == 0) 0.06f else 0.03f)
-            tick.strokeWidth = s * 0.01f
-            canvas.drawLine(
-                c + (r1 * Math.cos(a)).toFloat(), c + (r1 * Math.sin(a)).toFloat(),
-                c + (r2 * Math.cos(a)).toFloat(), c + (r2 * Math.sin(a)).toFloat(), tick
-            )
-        }
+        // The ram, sitting at the bottom so its head matches the other ram's size
+        canvas.translate(RamArt.RAM_OX, RamArt.RAM_OY)
+        canvas.scale(RamArt.RAM_SCALE, RamArt.RAM_SCALE)
+        canvas.drawBitmap(tinted, 0f, 0f, bmpPaint)
 
-        // Neon value arc: cyan → purple → pink as memory fills up
-        arc.strokeWidth = stroke
-        val grad = SweepGradient(c, c, intArrayOf(cyan, cyan, purple, pink, pink), floatArrayOf(0f, 0.2f, 0.42f, 0.75f, 1f))
-        val m = android.graphics.Matrix().apply { setRotate(135f, c, c) } // start the colours where the dial starts
-        grad.setLocalMatrix(m)
-        arc.shader = grad
-        val glowColor = when {
-            shown < 50 -> cyan
-            shown < 80 -> purple
-            else -> pink
-        }
-        arc.setShadowLayer(s * 0.05f, 0f, 0f, glowColor)
-        if (shown > 0.5f) canvas.drawArc(oval, 135f, 270f * shown / 100f, false, arc)
+        val cx = RamArt.RAM_CX
+        val cy = RamArt.RAM_CY
+        val span = RamArt.SCALE_END - RamArt.SCALE_START
 
-        // Readout
-        big.textSize = s * 0.17f
-        big.setShadowLayer(s * 0.04f, 0f, 0f, glowColor)
-        canvas.drawText("${shown.toInt()}%", c, c + s * 0.05f, big)
-        small.textSize = s * 0.052f
-        small.setShadowLayer(s * 0.02f, 0f, 0f, cyan)
-        canvas.drawText("RAM USED", c, c + s * 0.16f, small)
+        // "68% USED" on the blue part and "32% FREE" on the green part, outlined in white
+        val boundary = RamArt.SCALE_START + shown / 100f * span
+        val used = shown.roundToInt()
+        drawHornLabel(canvas, cx, cy, (RamArt.SCALE_START + boundary) / 2f, "$used%", "USED", blueText, used >= 6)
+        drawHornLabel(canvas, cx, cy, (boundary + RamArt.SCALE_END) / 2f, "${100 - used}%", "FREE", greenText, used <= 94)
+
+        // Needle from the centre of the curl to the used amount
+        val ni = RamArt.hornIndex(RamArt.SCALE_START + shown / 100f * span)
+        val na = Math.toRadians(RamArt.HORN_ANGLE[ni].toDouble())
+        val tipR = RamArt.HORN_R_IN[ni] + 10f
+        val baseR = 38f
+        val nx = -sin(na).toFloat()
+        val ny = cos(na).toFloat()
+        drawSpike(canvas, cx, cy, na, tipR, baseR, 10f, nx, ny, needleDark)
+        drawSpike(canvas, cx, cy, na, tipR - 5f, baseR, 6.5f, nx, ny, needleLight)
+
+        canvas.restore()
+    }
+
+    /** A two-line label ("68%" over "USED") in the middle of the horn at position [t]. */
+    private fun drawHornLabel(
+        canvas: Canvas, cx: Float, cy: Float, t: Float, num: String, word: String, color: Int, show: Boolean
+    ) {
+        if (!show) return   // too little of the horn to fit a label
+        val i = RamArt.hornIndex(t)
+        val a = Math.toRadians(RamArt.HORN_ANGLE[i].toDouble())
+        val rr = (RamArt.HORN_R_IN[i] + RamArt.HORN_R_OUT[i]) / 2f
+        val x = cx + (rr * cos(a)).toFloat()
+        val y = cy + (rr * sin(a)).toFloat()
+        hornNum.color = color
+        hornWord.color = color
+        canvas.drawText(num, x, y + 6f, hornNumOutline)
+        canvas.drawText(num, x, y + 6f, hornNum)
+        canvas.drawText(word, x, y + 40f, hornWordOutline)
+        canvas.drawText(word, x, y + 40f, hornWord)
+    }
+
+    private fun drawSpike(
+        canvas: Canvas, cx: Float, cy: Float, a: Double, tipR: Float, baseR: Float,
+        half: Float, nx: Float, ny: Float, paint: Paint
+    ) {
+        val bx = cx + (baseR * cos(a)).toFloat()
+        val by = cy + (baseR * sin(a)).toFloat()
+        path.reset()
+        path.moveTo(cx + (tipR * cos(a)).toFloat(), cy + (tipR * sin(a)).toFloat())
+        path.lineTo(bx + nx * half, by + ny * half)
+        path.lineTo(bx - nx * half, by - ny * half)
+        path.close()
+        canvas.drawPath(path, paint)
     }
 }

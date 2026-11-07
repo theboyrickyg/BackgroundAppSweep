@@ -1,10 +1,10 @@
-# Background App Sweep
+# App Closer
 
 A neon-style app for **Android phones and Android TV / Google TV**.
 
 ## What it does (and why it beats "Background Apps & Process List")
 
-| | Background Apps & Process List | **Background App Sweep** |
+| | Background Apps & Process List | **App Closer** |
 |---|---|---|
 | What it lists | Every installed app, running or not | **Only what's actually running** |
 | Closing apps | Opens each App info page; you tap Force Stop yourself, one by one | **Closes everything instantly in the background, no screens** |
@@ -45,7 +45,7 @@ Since Android 10, normal apps are blocked from closing other apps or clearing th
 
 ### Easy setup
 1. Open the app and choose **Easy setup**, then press **Open Accessibility**.
-2. Tap **Background App Sweep** (phones: often under *Installed apps* or *Downloaded apps*; TVs: under *Services*), switch it on and allow it.
+2. Tap **App Closer** (phones: often under *Installed apps* or *Downloaded apps*; TVs: under *Services*), switch it on and allow it.
 3. Come back to the app.
 
 *Switch greyed out (Android 13+)?* Android does this for apps installed from a link. In the app press **Fix greyed-out switch**, tap the **⋮** menu → **Allow restricted settings**, then try again.
@@ -85,7 +85,7 @@ That's it. On most TVs it keeps working after a restart.
 2. **Developer options:** Settings → About phone → tap **Build number** 7 times.
 3. **Wireless debugging:** Settings → System → Developer options → switch on **Wireless debugging** (Wi-Fi must be on).
 4. In the app press **Start pairing**, then in Wireless debugging tap **Pair device with pairing code**.
-5. Pull down your notifications and type the 6-digit code into the **Background App Sweep** notification. It says **Paired ✓** when done.
+5. Pull down your notifications and type the 6-digit code into the **App Closer** notification. It says **Paired ✓** when done.
 6. Go back to the app. It connects by itself.
 
 Android turns Wireless debugging off after a restart or a Wi-Fi change. If the app asks, switch it back on in Developer options. No new code is needed.

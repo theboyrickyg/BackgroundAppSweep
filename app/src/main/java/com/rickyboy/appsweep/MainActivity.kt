@@ -53,8 +53,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var linkButton: Button
     private lateinit var sweepButton: Button
     private lateinit var resultText: TextView
+    private lateinit var resultRow: LinearLayout
+    private lateinit var allCleanView: View
+    private lateinit var statClosed: TextView
+    private lateinit var statRam: TextView
+    private lateinit var statCache: TextView
     private lateinit var statsText: TextView
     private lateinit var listHeader: TextView
+    private lateinit var listHint: TextView
     private lateinit var adapter: AppAdapter
 
     private var busy = false
@@ -107,8 +113,14 @@ class MainActivity : AppCompatActivity() {
         shizukuButton.setOnClickListener { useShizuku() }
         sweepButton = findViewById(R.id.sweepButton)
         resultText = findViewById(R.id.resultText)
+        resultRow = findViewById(R.id.resultRow)
+        allCleanView = findViewById(R.id.allCleanView)
+        statClosed = findViewById(R.id.statClosed)
+        statRam = findViewById(R.id.statRam)
+        statCache = findViewById(R.id.statCache)
         statsText = findViewById(R.id.statsText)
         listHeader = findViewById(R.id.listHeader)
+        listHint = findViewById(R.id.listHint)
 
         adapter = AppAdapter(onTap = { showOptions(it) }, onHold = { quickClose(it) }, onAutoStart = { setBlocked(it, !it.backgroundBlocked) })
         val list = findViewById<RecyclerView>(R.id.appList)
@@ -148,9 +160,10 @@ class MainActivity : AppCompatActivity() {
                     if (st.running) cleanGauge.setProgress(st.percent.toFloat())
                     val r = st.result
                     if (r != null) {
-                        EasySweep.state.value = st.copy(result = null)
+                        EasySweep.state.value = st.copy(result = null, report = "")
                         cleanGauge.finish()
                         showSweepDone(r)
+                        if (r.closed == 0 && st.report.isNotBlank()) showEasyReport(st.report)
                     }
                 }
             }
@@ -275,13 +288,13 @@ class MainActivity : AppCompatActivity() {
                     "Last step: pair the app once.\n" +
                         "Developer options → Wireless debugging → \"Pair device with pairing code\". " +
                         "Write down the 6-digit code, press HOME on the remote (not Back), " +
-                        "open Background App Sweep again, type the code below and press Pair."
+                        "open App Closer again, type the code below and press Pair."
                 } else {
                     "Step 3 of 3: pair the app once.\n" +
                         "1. Press \"Start pairing\" below.\n" +
                         "2. In Wireless debugging, tap \"Pair device with pairing code\".\n" +
                         "3. Pull down your notifications and type the 6-digit code into the " +
-                        "Background App Sweep notification. Keep the code on screen while you do this.\n" +
+                        "App Closer notification. Keep the code on screen while you do this.\n" +
                         "4. Come back here when it says Paired ✓."
                 }
                 codeRow.visibility = View.VISIBLE
@@ -318,7 +331,7 @@ class MainActivity : AppCompatActivity() {
     /** First screen: Easy (one switch) or Pro (debugging). */
     private fun showChoice() {
         statusCard.visibility = View.VISIBLE
-        statusText.text = "Welcome! Choose how to set up Background App Sweep:\n\n" +
+        statusText.text = "Welcome! Choose how to set up App Closer:\n\n" +
             "EASY (recommended)\nSwitch on one setting. No codes, nothing technical. " +
             "Closing apps takes a few seconds each, with a progress screen while it works.\n\n" +
             "PRO\nFor confident users. Uses Developer options. Closes everything instantly and silently, " +
@@ -347,17 +360,17 @@ class MainActivity : AppCompatActivity() {
         val switchedOnButNotRunning = SweepAccessibilityService.isEnabledInSettings(this) && !SweepAccessibilityService.isOn()
         statusText.text = when {
             switchedOnButNotRunning ->
-                "Nearly there… starting up.\n\nIf this doesn't change in a few seconds, switch Background App Sweep off and on again in Accessibility."
+                "Nearly there… starting up.\n\nIf this doesn't change in a few seconds, switch App Closer off and on again in Accessibility."
             isTv ->
                 "Easy setup: one switch\n\n" +
                     "1. Press \"Open Accessibility\".\n" +
-                    "2. Choose Background App Sweep (it may be under Services or Downloaded services).\n" +
+                    "2. Choose App Closer (it may be under Services or Downloaded services).\n" +
                     "3. Switch it on and choose OK.\n" +
                     "4. Press Back to return here."
             else ->
                 "Easy setup: one switch\n\n" +
                     "1. Press \"Open Accessibility\".\n" +
-                    "2. Tap Background App Sweep (it may be under Installed apps or Downloaded apps).\n" +
+                    "2. Tap App Closer (it may be under Installed apps or Downloaded apps).\n" +
                     "3. Switch it on and tap Allow.\n" +
                     "4. Come back here.\n\n" +
                     "Switch greyed out? Android does this for apps installed from a link. " +
@@ -501,8 +514,22 @@ class MainActivity : AppCompatActivity() {
         }
         adapter.items = currentApps
         val userApps = currentApps.count { !it.isSystem && it.isRunning }
-        appsCountText.text = "Launched apps: $userApps"
-        listHeader.text = "Running apps ($userApps)"
+        appsCountText.text = colored("Launched apps: ", 0, "$userApps", RED)
+        if (easyMode) {
+            listHeader.text = colored("Opened apps (", 0, "$userApps", RED, ")")
+            listHint.text = if (userApps == 0) {
+                "Nothing open right now. Apps you open will show up here, ready for your next sweep."
+            } else {
+                "Most recently opened first · Tap an app for options · Hold to close it"
+            }
+        } else {
+            listHeader.text = colored("Running apps (", 0, "$userApps", RED, ")")
+            listHint.text = if (userApps == 0) {
+                "No apps running in the background. All clean!"
+            } else {
+                "Biggest RAM users first · Tap an app for options · Hold to close it"
+            }
+        }
     }
 
     private fun updateStats(apps: List<RunningApp>, totalCache: Long) {
@@ -540,10 +567,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun startSweepUi() {
         busy = true
+        allCleanView.animate().cancel()
+        allCleanView.visibility = View.GONE
+        sweepButton.visibility = View.VISIBLE
         sweepButton.isEnabled = false
         sweepButton.setBackgroundResource(R.drawable.bg_sweep_button)
         sweepButton.text = "SWEEPING…"
         resultText.visibility = View.GONE
+        resultRow.visibility = View.GONE
         cleanGauge.startCleaning()
     }
 
@@ -554,24 +585,78 @@ class MainActivity : AppCompatActivity() {
         cleanGauge.reset()
     }
 
+    /** Easy mode couldn't press the buttons on this phone: show what it saw so it can be fixed. */
+    private fun showEasyReport(report: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Easy mode needs a tweak for this phone")
+            .setMessage(
+                "It couldn't find or press the Force stop buttons on this phone's Settings screens. " +
+                    "Copy this report and send it to the developer so it can be fixed:\n\n" + report.take(1500)
+            )
+            .setPositiveButton("Copy report") { _, _ ->
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("Easy mode report", report))
+                toast("Report copied")
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
     /** Green button + "Closed 6 apps · freed …", then back to normal after 5 seconds. */
     private fun showSweepDone(result: SweepResult) {
-        resultText.text = resultLine(result)
-        resultText.visibility = View.VISIBLE
-        sweepButton.setBackgroundResource(R.drawable.bg_sweep_done)
-        sweepButton.text = "✓  ALL CLEAN"
+        statClosed.text = result.closed.toString()
+        statRam.text = AppAdapter.formatBytes(result.ramFreed)
+        statCache.text = AppAdapter.formatBytes(result.cacheFreed)
+        resultRow.visibility = View.VISIBLE
         busy = false
         sweepButton.isEnabled = true
+        val worked = result.closed > 0 || result.cacheFreed > 0
+        if (worked) {
+            // The happy ram pops in where the button was
+            resultText.visibility = View.GONE
+            sweepButton.visibility = View.INVISIBLE   // stays in place for when it comes back
+            allCleanView.visibility = View.VISIBLE
+            allCleanView.scaleX = 0.6f
+            allCleanView.scaleY = 0.6f
+            allCleanView.alpha = 0f
+            allCleanView.animate().scaleX(1f).scaleY(1f).alpha(1f)
+                .setDuration(450).setInterpolator(android.view.animation.OvershootInterpolator(1.6f)).start()
+        } else {
+            resultText.text = if (easyMode) {
+                "Nothing was closed. Easy mode couldn't press the buttons on this phone (see the report)."
+            } else {
+                "Nothing needed closing. Everything was already clean."
+            }
+            resultText.visibility = View.VISIBLE
+            sweepButton.setBackgroundResource(R.drawable.bg_sweep_button)
+            sweepButton.text = getString(R.string.sweep_button)
+            cleanGauge.reset()
+        }
         refresh()
         lifecycleScope.launch {
             delay(5000)
             if (!busy) {
-                sweepButton.setBackgroundResource(R.drawable.bg_sweep_button)
-                sweepButton.text = getString(R.string.sweep_button)
+                showSweepButton()
                 cleanGauge.reset()
             }
         }
     }
+
+    /** Back to the normal pink button (after the happy ram has had its moment). */
+    private fun showSweepButton() {
+        sweepButton.setBackgroundResource(R.drawable.bg_sweep_button)
+        sweepButton.text = getString(R.string.sweep_button)
+        if (allCleanView.visibility == View.VISIBLE) {
+            allCleanView.animate().alpha(0f).setDuration(250).withEndAction {
+                allCleanView.visibility = View.GONE
+                sweepButton.visibility = View.VISIBLE
+                sweepButton.requestFocus()
+            }.start()
+        } else {
+            sweepButton.visibility = View.VISIBLE
+        }
+    }
+
 
     private fun showOptions(app: RunningApp) {
         val actions = mutableListOf<Action>()
@@ -670,8 +755,9 @@ class MainActivity : AppCompatActivity() {
         if (info.totalMem <= 0) return
         val used = info.totalMem - info.availMem
         ramGauge.setPercent(used * 100f / info.totalMem)
-        ramUsedText.text = "${gb(used)} / ${gb(info.totalMem)}"
-        ramFreeText.text = "${gb(info.availMem)} available"
+        // Used = red, available = green, everything else white
+        ramUsedText.text = colored(gb(used), RED, " / ${gb(info.totalMem)}")
+        ramFreeText.text = colored(gb(info.availMem), GREEN, " available")
     }
 
     /** 4.25 GB style */
@@ -695,6 +781,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+}
+
+private const val RED = 0xFFE53935.toInt()
+private const val GREEN = 0xFF00E676.toInt()
+
+/** Builds text where some parts are coloured: colored("4.97 GB", RED, " / 7.26 GB"). Colour 0 = white. */
+private fun colored(vararg parts: Any): CharSequence {
+    val sb = android.text.SpannableStringBuilder()
+    var i = 0
+    while (i < parts.size) {
+        val text = parts[i].toString()
+        val color = if (i + 1 < parts.size && parts[i + 1] is Int) parts[i + 1] as Int else 0
+        val start = sb.length
+        sb.append(text)
+        if (color != 0) {
+            sb.setSpan(android.text.style.ForegroundColorSpan(color), start, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        i += if (i + 1 < parts.size && parts[i + 1] is Int) 2 else 1
+    }
+    return sb
 }
 
 private class Action(val label: String, val run: () -> Unit)

@@ -2,9 +2,11 @@
     <color name="bg">#FF07070F</color>
     <color name="card">#FF12121F</color>
     <color name="card_focus">#FF1E1E36</color>
-    <color name="neon_cyan">#FF00F0FF</color>
-    <color name="neon_pink">#FFFF2D95</color>
-    <color name="neon_purple">#FF9D3CFF</color>
+    <color name="neon_cyan">#FFFFFFFF</color>      <!-- was neon blue: now plain white -->
+    <color name="neon_pink">#FFE53935</color>      <!-- was neon pink: now red -->
+    <color name="neon_purple">#FFB71C1C</color>    <!-- dark red -->
+    <color name="accent_red">#FFE53935</color>
+    <color name="accent_green">#FF00E676</color>
     <color name="text_main">#FFFFFFFF</color>
     <color name="text_dim">#FF9A9AB8</color>
 </resources>

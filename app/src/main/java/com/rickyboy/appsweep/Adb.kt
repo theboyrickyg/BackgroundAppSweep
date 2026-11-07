@@ -61,7 +61,7 @@ object Adb {
                 val generator = KeyPairGenerator.getInstance("RSA")
                 generator.initialize(2048)
                 val pair = generator.generateKeyPair()
-                val name = X500Name("CN=Background App Sweep")
+                val name = X500Name("CN=App Closer")
                 val now = Date()
                 val until = Date(now.time + 3650L * 24 * 60 * 60 * 1000) // 10 years
                 val builder = JcaX509v3CertificateBuilder(
@@ -77,7 +77,7 @@ object Adb {
 
         override fun getPrivateKey(): PrivateKey = mKey
         override fun getCertificate(): Certificate = mCert
-        override fun getDeviceName(): String = "BackgroundAppSweep"
+        override fun getDeviceName(): String = "AppCloser"
     }
 
     @Synchronized

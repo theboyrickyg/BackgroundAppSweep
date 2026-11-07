@@ -19,7 +19,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:letterSpacing="0.15"
-            android:text="QUICK SWEEP"
+            android:text="QUICK CLOSE"
             android:textColor="@color/text_main"
             android:textSize="26sp"
             android:textStyle="bold|italic" />
@@ -29,9 +29,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
-            android:shadowColor="@color/neon_pink"
-            android:shadowRadius="10"
-            android:textColor="@color/neon_pink"
+            android:textColor="@color/text_main"
             android:textSize="20sp"
             android:textStyle="bold|italic" />
 

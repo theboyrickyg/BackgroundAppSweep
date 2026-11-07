@@ -10,7 +10,7 @@
         <clip>
             <shape>
                 <corners android:radius="5dp" />
-                <gradient android:angle="0" android:startColor="@color/neon_cyan" android:endColor="@color/neon_pink" />
+                <gradient android:angle="0" android:startColor="#FF00C853" android:endColor="@color/accent_green" />
             </shape>
         </clip>
     </item>

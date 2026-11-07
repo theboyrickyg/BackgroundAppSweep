@@ -54,7 +54,7 @@ class QuickSweepActivity : AppCompatActivity() {
             }
             if (state != Shell.Status.READY) {
                 status.text = "Not set up yet"
-                result.text = "Open Background App Sweep to finish setting up."
+                result.text = "Open App Closer to finish setting up."
                 result.visibility = View.VISIBLE
                 openButton.visibility = View.VISIBLE
                 openButton.requestFocus()

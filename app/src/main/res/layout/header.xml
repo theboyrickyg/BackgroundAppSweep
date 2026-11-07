@@ -10,7 +10,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:letterSpacing="0.15"
-        android:text="BACKGROUND APP SWEEP"
+        android:text="APP CLOSER"
         android:textColor="@color/text_main"
         android:textSize="17sp"
         android:textStyle="bold|italic" />
@@ -60,9 +60,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:shadowColor="@color/neon_cyan"
-                android:shadowRadius="8"
-                android:textColor="@color/neon_cyan"
+                android:textColor="@color/text_main"
                 android:textSize="15sp"
                 android:textStyle="bold|italic" />
 
@@ -71,10 +69,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:shadowColor="@color/neon_pink"
-                android:shadowRadius="8"
                 android:text="Launched apps: –"
-                android:textColor="@color/neon_pink"
+                android:textColor="@color/text_main"
                 android:textSize="15sp"
                 android:textStyle="bold|italic" />
     </LinearLayout>

@@ -130,34 +130,173 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <Button
-        android:id="@+id/sweepButton"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="68dp"
-        android:layout_marginTop="18dp"
-        android:background="@drawable/bg_sweep_button"
-        android:enabled="false"
-        android:alpha="0.4"
-        android:letterSpacing="0.08"
-        android:shadowColor="#AA000000"
-        android:shadowRadius="6"
-        android:stateListAnimator="@null"
-        android:text="@string/sweep_button"
-        android:textColor="@color/text_main"
-        android:textSize="19sp"
-        android:textStyle="bold|italic" />
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp">
+
+        <Button
+            android:id="@+id/sweepButton"
+            android:layout_width="match_parent"
+            android:layout_height="68dp"
+                    android:background="@drawable/bg_sweep_button"
+            android:enabled="false"
+            android:alpha="0.4"
+            android:letterSpacing="0.08"
+            android:shadowColor="#AA000000"
+            android:shadowRadius="6"
+            android:stateListAnimator="@null"
+            android:text="@string/sweep_button"
+            android:textColor="@color/text_main"
+            android:textSize="19sp"
+            android:textStyle="bold|italic" />
+
+        <!-- Shown for a few seconds after a sweep, in place of the button -->
+        <LinearLayout
+            android:id="@+id/allCleanView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="wrap_content"
+                android:layout_height="170dp"
+                android:adjustViewBounds="true"
+                android:contentDescription="All clean"
+                android:src="@drawable/all_clean_ram" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:shadowColor="#FF00E676"
+                android:shadowRadius="10"
+                android:text="All clean!"
+                android:textColor="@color/text_main"
+                android:textSize="28sp"
+                android:textStyle="bold|italic" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/resultRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_card_plain"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp">
+
+            <TextView
+                android:id="@+id/statClosed"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:shadowColor="#00000000"
+                android:shadowRadius="0"
+                android:text="0"
+                android:textColor="@color/text_main"
+                android:textSize="20sp"
+                android:textStyle="bold|italic" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.08"
+                android:text="APPS CLOSED"
+                android:textColor="@color/accent_red"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_card_plain"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp">
+
+            <TextView
+                android:id="@+id/statRam"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:shadowColor="#00000000"
+                android:shadowRadius="0"
+                android:text="0"
+                android:textColor="@color/text_main"
+                android:textSize="20sp"
+                android:textStyle="bold|italic" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.08"
+                android:text="RAM FREED"
+                android:textColor="@color/accent_green"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_card_plain"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp">
+
+            <TextView
+                android:id="@+id/statCache"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:shadowColor="#00000000"
+                android:shadowRadius="0"
+                android:text="0"
+                android:textColor="@color/text_main"
+                android:textSize="20sp"
+                android:textStyle="bold|italic" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.08"
+                android:text="CACHE CLEARED"
+                android:textColor="@color/accent_green"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
 
     <TextView
         android:id="@+id/resultText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
+        android:layout_marginTop="8dp"
         android:gravity="center"
-        android:shadowColor="@color/neon_pink"
-        android:shadowRadius="10"
-        android:textColor="@color/neon_pink"
-        android:textSize="15sp"
-        android:textStyle="bold|italic"
+        android:textColor="@color/text_dim"
+        android:textSize="13sp"
+        android:textStyle="italic"
         android:visibility="gone" />
 
     <TextView
@@ -190,6 +329,7 @@
     </LinearLayout>
 
     <TextView
+        android:id="@+id/listHint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
