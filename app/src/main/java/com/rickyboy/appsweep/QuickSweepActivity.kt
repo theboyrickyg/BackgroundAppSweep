@@ -1,6 +1,7 @@
 package com.rickyboy.appsweep
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import android.widget.Button
@@ -49,6 +50,12 @@ class QuickSweepActivity : AppCompatActivity() {
                 result.text = "Nothing to close yet."
                 result.visibility = View.VISIBLE
                 delay(2500)
+                finishAndRemoveTask()
+                return@launch
+            }
+            // TV with nothing set up: the main screen does the guided closing
+            if (state != Shell.Status.READY && packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)) {
+                startActivity(Intent(this@QuickSweepActivity, MainActivity::class.java).putExtra("auto_sweep", true))
                 finishAndRemoveTask()
                 return@launch
             }

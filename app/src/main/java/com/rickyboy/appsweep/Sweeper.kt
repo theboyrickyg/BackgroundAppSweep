@@ -119,6 +119,35 @@ class Sweeper(private val ctx: Context) {
             .sortedByDescending { it.openedAt }
     }
 
+    /**
+     * TV guided mode: apps that have been launched since they were last stopped. Android marks a
+     * force-stopped / never-opened app as "stopped", which any app can read without permissions.
+     */
+    fun scanTvLaunched(): List<RunningApp> {
+        val protected = protectedApps()
+        val skip = neverClose()
+        return launchablePackages()
+            .filter { it !in skip && !isStopped(it) }
+            .mapNotNull { pkg ->
+                val info = try { pm.getApplicationInfo(pkg, 0) } catch (_: Exception) { return@mapNotNull null }
+                RunningApp(
+                    packageName = pkg,
+                    label = info.loadLabel(pm).toString(),
+                    icon = try { info.loadIcon(pm) } catch (_: Exception) { null },
+                    memoryKb = 0, cpuPercent = 0f, cacheBytes = -1,
+                    isSystem = false, isProtected = pkg in protected,
+                    backgroundBlocked = false, isRunning = true
+                )
+            }
+            .sortedBy { it.label.lowercase() }
+    }
+
+    fun isStopped(pkg: String): Boolean = try {
+        (pm.getApplicationInfo(pkg, 0).flags and ApplicationInfo.FLAG_STOPPED) != 0
+    } catch (_: Exception) {
+        true
+    }
+
     /** RAM per package, from `ps` (sums every process an app has). */
     private fun readProcessMemory(): Map<String, Long> {
         var output = Shell.exec("ps -A -o RSS,NAME 2>/dev/null")

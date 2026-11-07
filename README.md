@@ -68,16 +68,11 @@ https://github.com/YOUR-USERNAME/AppSweep/releases/latest/download/BackgroundApp
 
 Put that link into aftvnews.com/downloader to get a Downloader code for the TV.
 
-## 2. Pro setup on a TV (no PC needed)
+## 2. On Google TV / Android TV
 
-1. Install Background App Sweep and open it.
-2. **Developer options:** Settings → System → About → click **Android TV OS build** 7 times.
-3. **Debugging:** Settings → System → Developer options → switch on **Network debugging** (sometimes called ADB debugging).
-4. Back in the app, press **Connect**. When the TV asks **"Allow debugging?"**, tick **Always allow** and press **OK**.
+No setup needed. Open App Closer and press **CLOSE ALL & CLEAR CACHE**: each launched app's page opens in turn. Press **Force stop**, then **OK**, then **Back**, and the next app opens by itself. Press **STOP** to finish early.
 
-That's it. On most TVs it keeps working after a restart.
-
-*If your TV only has **Wireless debugging**:* switch it on, then choose **Pair device with pairing code**. Note the 6-digit code, press **HOME** (not Back), open Background App Sweep, type the code and press **Pair**.
+(If you've switched on App Closer in the TV's Accessibility settings, or connected Pro before, it closes everything automatically instead.)
 
 ## 3. Pro setup on a phone (Android 11 or newer)
 

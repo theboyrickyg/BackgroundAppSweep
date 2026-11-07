@@ -76,6 +76,20 @@ class MainActivity : AppCompatActivity() {
 
     private var setupJob: Job? = null
 
+    /** TV with neither Pro nor Easy set up: App Closer opens each app's page for you to press Force stop. */
+    private val tvGuided: Boolean get() = isTv && !Shell.isReady() && !SweepAccessibilityService.isOn()
+
+    // Guided closing state (TV)
+    private var guidedActive = false
+    private val guidedQueue = ArrayDeque<RunningApp>()
+    private var guidedCurrent: RunningApp? = null
+    private var guidedTotal = 0
+    private var guidedClosed = 0
+    private var guidedRamBefore = 0L
+    private var guidedDiskBefore = 0L
+    private var guidedNextJob: Job? = null
+    private var autoSweepPending = false
+
     /** Easy mode = no debugging connection, but the accessibility switch is on. */
     private val easyMode: Boolean get() = !Shell.isReady() && SweepAccessibilityService.isOn()
     private var setupChoice: String?
@@ -173,6 +187,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        autoSweepPending = intent?.getBooleanExtra("auto_sweep", false) == true
         sweepButton.requestFocus() // TV remote starts on the big button
     }
 
@@ -183,6 +198,10 @@ class MainActivity : AppCompatActivity() {
             easyStep = awaitingStep
         }
         awaitingStep = -1
+        if (guidedActive) {
+            onGuidedReturn()
+            return
+        }
         checkConnection(userAsked = false)
         if (ready && !busy) refresh()
     }
@@ -203,6 +222,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (setupJob?.isActive == true) return
+        if (isTv && !Adb.hasWorkedBefore(this) && !Shell.shizukuUsable()) {
+            onStatus(Shell.Status.READY)   // guided or Easy mode, no setup screens on TV
+            return
+        }
         // Easy mode is on and Pro has never been set up: nothing to connect
         if (!userAsked && SweepAccessibilityService.isOn() && !Adb.hasWorkedBefore(this) && !Shell.shizukuUsable()) {
             onStatus(Shell.Status.READY)
@@ -211,7 +234,7 @@ class MainActivity : AppCompatActivity() {
         if (userAsked) onStatus(Shell.Status.CONNECTING)
         setupJob = lifecycleScope.launch {
             var status = Shell.ensureConnected(applicationContext, userAsked)
-            if (status != Shell.Status.READY && !userAsked && SweepAccessibilityService.isOn()) {
+            if (status != Shell.Status.READY && !userAsked && (SweepAccessibilityService.isOn() || isTv)) {
                 status = Shell.Status.READY // fall back to Easy mode
             }
             onStatus(status)
@@ -569,8 +592,11 @@ class MainActivity : AppCompatActivity() {
         scanJob = lifecycleScope.launch {
             if (currentApps.isEmpty()) listHeader.text = "Scanning…"
             val easy = easyMode
+            val guided = tvGuided
             val apps = withContext(Dispatchers.IO) {
-                if (easy) {
+                if (guided) {
+                    sweeper.scanTvLaunched()
+                } else if (easy) {
                     sweeper.scanEasy()
                 } else {
                     if (!usageGranted) {
@@ -580,9 +606,17 @@ class MainActivity : AppCompatActivity() {
                     sweeper.scan(includeSystem = false)
                 }
             }
-            adapter.easyMode = easy
+            adapter.easyMode = easy || guided
             showList(apps)
+            if (autoSweepPending && !busy) {
+                autoSweepPending = false
+                sweepAll()
+            }
             updateMemory()
+            if (guided) {
+                statsText.text = "Press Close All: each app's page opens. Press Force stop, then OK, then Back."
+                return@launch
+            }
             if (easy) {
                 statsText.text = "Easy mode · apps you've opened since your last sweep"
                 return@launch
@@ -606,7 +640,11 @@ class MainActivity : AppCompatActivity() {
         val userApps = currentApps.count { !it.isSystem && it.isRunning }
         appsCountText.text = colored("Launched apps: ", 0, "$userApps", RED)
         updateCloseAppButton(userApps)
-        if (easyMode) {
+        if (tvGuided) {
+            listHeader.text = colored("Launched apps (", 0, "$userApps", RED, ")")
+            listHint.text = if (userApps == 0) "No launched apps. All clean!"
+                else "Select an app to close just that one"
+        } else if (easyMode) {
             listHeader.text = colored("Opened apps (", 0, "$userApps", RED, ")")
             listHint.text = if (userApps == 0) {
                 "Nothing open right now. Apps you open will show up here, ready for your next sweep."
@@ -635,6 +673,10 @@ class MainActivity : AppCompatActivity() {
     private fun sweepAll() {
         if (busy || !ready) return
         val apps = currentApps
+        if (tvGuided) {
+            startGuided(apps.filter { it.isRunning && !it.isProtected })
+            return
+        }
         if (easyMode) {
             val svc = SweepAccessibilityService.instance ?: return
             val targets = apps.filter { it.isRunning && !it.isProtected }
@@ -654,6 +696,83 @@ class MainActivity : AppCompatActivity() {
             cleanGauge.finish()
             showSweepDone(result)
         }
+    }
+
+    // ---------- Guided closing (TV, no setup) ----------
+
+    private fun startGuided(targets: List<RunningApp>) {
+        if (targets.isEmpty()) {
+            toast("Nothing to close. All clean!")
+            return
+        }
+        startSweepUi()
+        guidedActive = true
+        guidedQueue.clear()
+        guidedQueue.addAll(targets)
+        guidedTotal = targets.size
+        guidedClosed = 0
+        guidedRamBefore = sweeper.availableRam()
+        guidedDiskBefore = sweeper.freeStorage()
+        sweepButton.isEnabled = true
+        sweepButton.text = "STOP"
+        sweepButton.setOnClickListener { finishGuided() }
+        openNextGuided()
+    }
+
+    private fun openNextGuided() {
+        val app = guidedQueue.removeFirstOrNull()
+        if (app == null) {
+            finishGuided()
+            return
+        }
+        guidedCurrent = app
+        val n = guidedTotal - guidedQueue.size
+        cleanGauge.setProgress(100f * (n - 1) / guidedTotal)
+        resultText.text = "Closing $n of $guidedTotal: ${app.label}"
+        resultText.visibility = View.VISIBLE
+        Toast.makeText(this, "${app.label} ($n of $guidedTotal): press Force stop, then OK, then Back", Toast.LENGTH_LONG).show()
+        try {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.packageName}")))
+        } catch (_: ActivityNotFoundException) {
+            openNextGuided()
+        }
+    }
+
+    /** Back from an app's page: count it if it was stopped, then open the next one after a moment. */
+    private fun onGuidedReturn() {
+        guidedCurrent?.let { if (sweeper.isStopped(it.packageName)) guidedClosed++ }
+        guidedCurrent = null
+        val n = guidedTotal - guidedQueue.size
+        cleanGauge.setProgress(100f * n / guidedTotal)
+        if (guidedQueue.isEmpty()) {
+            finishGuided()
+            return
+        }
+        resultText.text = "Next: ${guidedQueue.first().label}  ·  press STOP to finish now"
+        resultText.visibility = View.VISIBLE
+        sweepButton.requestFocus()
+        guidedNextJob?.cancel()
+        guidedNextJob = lifecycleScope.launch {
+            delay(1800)
+            if (guidedActive) openNextGuided()
+        }
+    }
+
+    private fun finishGuided() {
+        if (!guidedActive) return
+        guidedActive = false
+        guidedNextJob?.cancel()
+        guidedCurrent?.let { if (sweeper.isStopped(it.packageName)) guidedClosed++ }
+        guidedCurrent = null
+        guidedQueue.clear()
+        sweepButton.setOnClickListener { sweepAll() }
+        val result = SweepResult(
+            closed = guidedClosed,
+            ramFreed = (sweeper.availableRam() - guidedRamBefore).coerceAtLeast(0),
+            cacheFreed = (sweeper.freeStorage() - guidedDiskBefore).coerceAtLeast(0)
+        )
+        cleanGauge.finish()
+        showSweepDone(result)
     }
 
     private fun startSweepUi() {
@@ -715,7 +834,9 @@ class MainActivity : AppCompatActivity() {
             allCleanView.animate().scaleX(1f).scaleY(1f).alpha(1f)
                 .setDuration(450).setInterpolator(android.view.animation.OvershootInterpolator(1.6f)).start()
         } else {
-            resultText.text = if (easyMode) {
+            resultText.text = if (isTv && !Shell.isReady() && !SweepAccessibilityService.isOn()) {
+                "Nothing was closed. On each app's page, press Force stop, then OK."
+            } else if (easyMode) {
                 "Nothing was closed. Easy mode couldn't press the buttons on this phone (see the report)."
             } else {
                 "Nothing needed closing. Everything was already clean."
@@ -763,7 +884,7 @@ class MainActivity : AppCompatActivity() {
             val size = if (app.cacheBytes > 0) " (${AppAdapter.formatBytes(app.cacheBytes)})" else ""
             actions.add(Action("Clear its cache$size") { clearCache(app) })
         }
-        if (Sweeper.canBlockBackground && !easyMode) {
+        if (Sweeper.canBlockBackground && !easyMode && !tvGuided) {
             if (app.backgroundBlocked) {
                 actions.add(Action("Let it auto-start again") { setBlocked(app, false) })
             } else {
@@ -795,6 +916,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun closeApp(app: RunningApp) {
+        if (tvGuided) {
+            startGuided(listOf(app))
+            return
+        }
         if (easyMode) {
             val svc = SweepAccessibilityService.instance ?: return
             startSweepUi()
@@ -814,6 +939,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun clearCache(app: RunningApp) {
+        if (tvGuided) {
+            openAppInfo(app)
+            return
+        }
         if (easyMode) {
             val svc = SweepAccessibilityService.instance ?: return
             startSweepUi()
