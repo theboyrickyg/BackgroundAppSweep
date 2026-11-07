@@ -811,34 +811,50 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("Make closing automatic")
             .setMessage(
-                "App Closer can press Force stop and OK for you, and go back by itself. " +
-                    "Android needs you to switch this on once:\n\n" +
-                    "1. Select \"Open Accessibility settings\".\n" +
-                    "2. Choose App Closer (under Services or Downloaded services).\n" +
+                "App Closer can press Force stop, OK and Clear cache on each app for you, and go back by itself.\n\n" +
+                    "Switch it on once:\n" +
+                    "1. Select \"Open Accessibility\" below.\n" +
+                    "2. Scroll to the bottom of the list and select App Closer.\n" +
                     "3. Switch it on and choose OK.\n" +
-                    "4. Press Back to return here.\n\n" +
-                    "You can switch it off again at any time in the same place."
+                    "4. Press Back on the remote to return here.\n\n" +
+                    "You can switch it off again in the same place."
             )
-            .setPositiveButton("Open Accessibility settings") { _, _ -> openAccessibilitySettings() }
+            .setPositiveButton("Open Accessibility") { _, _ -> openAccessibilitySettings() }
             .setNegativeButton("Not now", null)
             .show()
     }
 
     /**
-     * Opens Accessibility settings. Some TVs and projectors don't have the standard screen, so this
-     * tries the known alternatives, and if none exist explains where else it might be.
+     * The real Accessibility screen inside the device's own Settings app. Needed on some TVs and
+     * projectors where the standard "open Accessibility" request goes nowhere.
      */
+    private fun findAccessibilityScreen(): Intent? {
+        val pkgs = linkedSetOf("com.android.tv.settings", "com.google.android.tv.settings", "com.android.settings")
+        packageManager.resolveActivity(Intent(Settings.ACTION_SETTINGS), 0)?.activityInfo?.packageName?.let { pkgs.add(it) }
+        val found = ArrayList<android.content.pm.ActivityInfo>()
+        for (pkg in pkgs) {
+            val acts = try {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(pkg, PackageManager.GET_ACTIVITIES).activities
+            } catch (_: Exception) {
+                null
+            } ?: continue
+            acts.filterTo(found) { it.exported && it.enabled && it.name.contains("ccessibility") }
+        }
+        // the main Accessibility page, not a sub-page
+        val best = found.firstOrNull { it.name.endsWith("AccessibilityActivity") || it.name.endsWith("AccessibilitySettingsActivity") }
+            ?: found.firstOrNull { it.name.endsWith("ccessibilitySettings") }
+            ?: found.firstOrNull()
+        return best?.let { Intent().setClassName(it.packageName, it.name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+    }
+
     private fun openAccessibilitySettings() {
-        val candidates = listOf(
-            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
-            Intent().setClassName("com.android.tv.settings", "com.android.tv.settings.accessibility.AccessibilityActivity"),
-            Intent().setClassName("com.android.tv.settings", "com.android.tv.settings.system.AccessibilityActivity"),
-            Intent().setClassName("com.google.android.tv.settings", "com.android.tv.settings.accessibility.AccessibilityActivity"),
-            Intent().setClassName("com.android.settings", "com.android.settings.Settings\$AccessibilitySettingsActivity")
-        )
-        for (intent in candidates) {
+        val standard = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        val direct = findAccessibilityScreen()
+        // TVs: go straight to the real screen first. Phones: the standard request works fine.
+        val order = if (isTv) listOfNotNull(direct, standard) else listOfNotNull(standard, direct)
+        for (intent in order) {
             val target = packageManager.resolveActivity(intent, 0)?.activityInfo ?: continue
-            // "android" = the system's "no app can do this" box, which is what this TV showed
             if (!target.exported || !target.enabled || target.packageName == "android") continue
             try {
                 startActivity(intent)
@@ -846,17 +862,12 @@ class MainActivity : AppCompatActivity() {
             } catch (_: Exception) {
             }
         }
-        AlertDialog.Builder(this)
-            .setTitle("Accessibility not found")
-            .setMessage(
-                "This TV doesn't have the usual Accessibility screen. Try opening it yourself:\n\n" +
-                    "Settings → Device Preferences (or System) → Accessibility → App Closer → switch on.\n\n" +
-                    "If there's no Accessibility menu, or App Closer isn't listed, this TV doesn't allow " +
-                    "automatic closing. The guided Close All still works: press Force stop, OK, Clear cache, then Back on each app."
-            )
-            .setPositiveButton("Open TV Settings") { _, _ -> openSettings(Settings.ACTION_SETTINGS) }
-            .setNegativeButton("OK", null)
-            .show()
+        // Last resort: the main Settings screen, with a pointer
+        openSettings(Settings.ACTION_SETTINGS)
+        toast(
+            if (isTv) "Select Accessibility, then App Closer at the bottom"
+            else "Tap Accessibility, then App Closer"
+        )
     }
 
     private fun startSweepUi() {
