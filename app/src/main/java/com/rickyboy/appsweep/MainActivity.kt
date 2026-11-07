@@ -55,6 +55,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var resultText: TextView
     private lateinit var resultRow: LinearLayout
     private lateinit var allCleanView: View
+    private lateinit var closeAppButton: Button
+    private var sweptThisSession = false
     private lateinit var statClosed: TextView
     private lateinit var statRam: TextView
     private lateinit var statCache: TextView
@@ -115,6 +117,8 @@ class MainActivity : AppCompatActivity() {
         resultText = findViewById(R.id.resultText)
         resultRow = findViewById(R.id.resultRow)
         allCleanView = findViewById(R.id.allCleanView)
+        closeAppButton = findViewById(R.id.closeAppButton)
+        closeAppButton.setOnClickListener { finishAndRemoveTask() }
         statClosed = findViewById(R.id.statClosed)
         statRam = findViewById(R.id.statRam)
         statCache = findViewById(R.id.statCache)
@@ -515,6 +519,7 @@ class MainActivity : AppCompatActivity() {
         adapter.items = currentApps
         val userApps = currentApps.count { !it.isSystem && it.isRunning }
         appsCountText.text = colored("Launched apps: ", 0, "$userApps", RED)
+        updateCloseAppButton(userApps)
         if (easyMode) {
             listHeader.text = colored("Opened apps (", 0, "$userApps", RED, ")")
             listHint.text = if (userApps == 0) {
@@ -567,6 +572,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun startSweepUi() {
         busy = true
+        closeAppButton.visibility = View.GONE
         allCleanView.animate().cancel()
         allCleanView.visibility = View.GONE
         sweepButton.visibility = View.VISIBLE
@@ -611,6 +617,7 @@ class MainActivity : AppCompatActivity() {
         busy = false
         sweepButton.isEnabled = true
         val worked = result.closed > 0 || result.cacheFreed > 0
+        sweptThisSession = true
         if (worked) {
             // The happy ram pops in where the button was
             resultText.visibility = View.GONE
@@ -634,12 +641,17 @@ class MainActivity : AppCompatActivity() {
         }
         refresh()
         lifecycleScope.launch {
-            delay(5000)
+            delay(15000)   // the happy ram stays up for 15 seconds
             if (!busy) {
                 showSweepButton()
                 cleanGauge.reset()
             }
         }
+    }
+
+    /** "Close this app" only once a sweep has finished and there's nothing left to clean. */
+    private fun updateCloseAppButton(openApps: Int = currentApps.count { !it.isSystem && it.isRunning }) {
+        closeAppButton.visibility = if (sweptThisSession && !busy && openApps == 0) View.VISIBLE else View.GONE
     }
 
     /** Back to the normal pink button (after the happy ram has had its moment). */

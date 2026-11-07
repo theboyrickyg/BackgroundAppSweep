@@ -35,8 +35,8 @@
             android:textStyle="bold" />
 
         <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
             android:id="@+id/appDetail"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

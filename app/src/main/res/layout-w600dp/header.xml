@@ -19,8 +19,8 @@
         android:orientation="vertical">
 
         <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:letterSpacing="0.15"
@@ -30,22 +30,20 @@
             android:textStyle="bold|italic" />
 
             <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#88FFFFFF"
+        android:shadowRadius="12"
                 android:id="@+id/ramUsedText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:shadowColor="#88FFFFFF"
-                android:shadowRadius="8"
                 android:text="– GB / – GB"
                 android:textColor="@color/text_main"
                 android:textSize="28sp"
                 android:textStyle="bold|italic" />
 
             <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
                 android:id="@+id/ramFreeText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -55,8 +53,8 @@
                 android:textStyle="bold|italic" />
 
             <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
                 android:id="@+id/appsCountText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"

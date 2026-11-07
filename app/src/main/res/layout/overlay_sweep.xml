@@ -14,8 +14,8 @@
         android:padding="24dp">
 
         <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:letterSpacing="0.15"
@@ -42,8 +42,8 @@
             android:progressDrawable="@drawable/mem_bar" />
 
         <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
             android:id="@+id/overlayStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -62,8 +62,8 @@
             android:textSize="16sp" />
 
         <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"

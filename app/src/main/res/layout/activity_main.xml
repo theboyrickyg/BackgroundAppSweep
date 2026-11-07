@@ -168,13 +168,11 @@
                 android:src="@drawable/all_clean_ram" />
 
             <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#FF00E676"
+        android:shadowRadius="12"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:shadowColor="#FF00E676"
-                android:shadowRadius="10"
                 android:text="All clean!"
                 android:textColor="@color/text_main"
                 android:textSize="28sp"
@@ -203,13 +201,11 @@
             android:paddingBottom="8dp">
 
             <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
                 android:id="@+id/statClosed"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:shadowColor="#00000000"
-                android:shadowRadius="0"
                 android:text="0"
                 android:textColor="@color/text_main"
                 android:textSize="20sp"
@@ -238,13 +234,11 @@
             android:paddingBottom="8dp">
 
             <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
                 android:id="@+id/statRam"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:shadowColor="#00000000"
-                android:shadowRadius="0"
                 android:text="0"
                 android:textColor="@color/text_main"
                 android:textSize="20sp"
@@ -273,13 +267,11 @@
             android:paddingBottom="8dp">
 
             <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
                 android:id="@+id/statCache"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:shadowColor="#00000000"
-                android:shadowRadius="0"
                 android:text="0"
                 android:textColor="@color/text_main"
                 android:textSize="20sp"
@@ -297,8 +289,8 @@
     </LinearLayout>
 
     <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
         android:id="@+id/resultText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -309,9 +301,24 @@
         android:textStyle="italic"
         android:visibility="gone" />
 
+    <!-- Appears once everything is clean: leaves the app -->
+    <Button
+        android:id="@+id/closeAppButton"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_sweep_done"
+        android:letterSpacing="0.08"
+        android:stateListAnimator="@null"
+        android:text="CLOSE THIS APP"
+        android:textColor="@color/text_main"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
     <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
         android:id="@+id/statsText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -341,8 +348,8 @@
     </LinearLayout>
 
     <TextView
-        android:paddingStart="6dp"
-        android:paddingEnd="6dp"
+        android:shadowColor="#00000000"
+        android:shadowRadius="12"
         android:id="@+id/listHint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
