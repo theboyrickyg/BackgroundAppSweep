@@ -155,8 +155,13 @@ class RamGaugeView @JvmOverloads constructor(
         canvas.scale(s, s)
 
         // Reading in the space above the ram (matches the apps bursting above the other ram)
-        canvas.drawText("${shown.roundToInt()}%", 24f, 120f, bigFill)
-        canvas.drawText("RAM USED", 28f, 168f, smallFill)
+        // Percentage with "RAM USED" centred underneath it
+        val pctText = "${shown.roundToInt()}%"
+        val centre = 24f + maxOf(bigFill.measureText(pctText), smallFill.measureText("RAM USED")) / 2f
+        bigFill.textAlign = Paint.Align.CENTER
+        smallFill.textAlign = Paint.Align.CENTER
+        canvas.drawText(pctText, centre, 120f, bigFill)
+        canvas.drawText("RAM USED", centre, 168f, smallFill)
 
         // The ram, sitting at the bottom so its head matches the other ram's size
         canvas.translate(RamArt.RAM_OX, RamArt.RAM_OY)

@@ -57,7 +57,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var allCleanView: View
     private lateinit var closeAppButton: Button
     private var sweptThisSession = false
-    private var awaitingRestricted = false
+    private var awaitingStep = -1   // which Easy step to show after coming back from Settings
     private lateinit var statClosed: TextView
     private lateinit var statRam: TextView
     private lateinit var statCache: TextView
@@ -179,10 +179,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateMemory()
-        if (awaitingRestricted) {
-            awaitingRestricted = false
-            if (setupChoice == "easy" && !ready) showEasySetup()
+        if (awaitingStep > 0 && setupChoice == "easy" && !SweepAccessibilityService.isEnabledInSettings(this)) {
+            easyStep = awaitingStep
         }
+        awaitingStep = -1
         checkConnection(userAsked = false)
         if (ready && !busy) refresh()
     }
@@ -245,10 +245,10 @@ class MainActivity : AppCompatActivity() {
         }
         if (!isReady) {
             linkButton.visibility = View.VISIBLE
-            linkButton.text = "Too fiddly? Use Easy setup instead (no codes)"
+            linkButton.text = "← Back to setup choice"
             linkButton.setOnClickListener {
-                setupChoice = "easy"
-                showEasySetup()
+                setupChoice = null
+                showChoice()
             }
         }
 
@@ -349,6 +349,7 @@ class MainActivity : AppCompatActivity() {
         statusButton.text = "Easy setup"
         statusButton.setOnClickListener {
             setupChoice = "easy"
+            easyStep = 1
             showEasySetup()
         }
         statusButton2.visibility = View.VISIBLE
@@ -381,74 +382,109 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Easy setup, one step at a time. */
+    private var easyStep: Int
+        get() = prefs.getInt("easy_step", 1)
+        set(v) { prefs.edit().putInt("easy_step", v).apply() }
+
+    private fun goEasyStep(step: Int) {
+        easyStep = step
+        showEasySetup()
+    }
+
+    /**
+     * Easy setup, one step at a time. On Android 13+ Android only offers "Allow restricted
+     * settings" (the ⋮ menu) AFTER you've tried to switch the app on once, so the steps follow
+     * that order: try → unlock → switch on.
+     */
     private fun showEasySetup() {
         statusCard.visibility = View.VISIBLE
         codeRow.visibility = View.GONE
+        statusButton.visibility = View.VISIBLE
         statusButton2.visibility = View.GONE
-        // small link at the bottom for anyone who'd rather use Pro
         linkButton.visibility = View.VISIBLE
-        linkButton.text = "Use Pro setup instead"
-        linkButton.setOnClickListener {
-            setupChoice = "pro"
-            checkConnection(userAsked = false)
-        }
 
         if (SweepAccessibilityService.isEnabledInSettings(this) && !SweepAccessibilityService.isOn()) {
             statusText.text = "Nearly there… starting up.\n\n" +
                 "If this doesn't change in a few seconds, switch App Closer off and on again in Accessibility."
             statusButton.visibility = View.GONE
+            linkButton.visibility = View.GONE
             return
         }
 
-        val allowed = restrictedSettingsAllowed() ?: prefs.getBoolean("restricted_step_done", false)
-        statusButton.visibility = View.VISIBLE
+        val needsUnlock = !isTv && Build.VERSION.SDK_INT >= 33
+        if (needsUnlock && restrictedSettingsAllowed() == true && easyStep < 3) easyStep = 3
+        val step = if (needsUnlock) easyStep.coerceIn(1, 3) else 3
 
-        if (!allowed) {
-            // ---- Step 1: unlock ----
-            statusText.text = "EASY SETUP · STEP 1 OF 2\n" +
-                "Allow restricted settings\n\n" +
-                "Android locks this setting for apps that aren't from the Play Store, so you unlock it first:\n\n" +
-                "1. Tap the \"Allow restricted settings\" button below.\n" +
-                "2. On the page that opens, tap the three dots ⋮ in the TOP RIGHT corner.\n" +
-                "3. Tap \"Allow restricted settings\".\n" +
-                "4. Enter your PIN or fingerprint if asked.\n" +
-                "5. Press Back to return here."
-            statusButton.text = "Allow restricted settings"
-            statusButton.setOnClickListener {
-                awaitingRestricted = true
-                openSettingsUri(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName")
-            }
-            if (restrictedSettingsAllowed() == null) {
-                // this phone won't say whether it's done, so let the person move on themselves
+        when (step) {
+            1 -> {
+                statusText.text = "EASY SETUP · STEP 1 OF 3\nTry to switch on App Closer\n\n" +
+                    "Android blocks this the first time. That's expected, and it unlocks the next step.\n\n" +
+                    "1. Tap \"Go to Accessibility\" below.\n" +
+                    "2. Tap App Closer (under Downloaded apps).\n" +
+                    "3. A \"Restricted setting\" message appears. Tap OK.\n" +
+                    "4. Press Back to return here."
+                statusButton.text = "Go to Accessibility"
+                statusButton.setOnClickListener {
+                    awaitingStep = 2
+                    openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                }
                 statusButton2.visibility = View.VISIBLE
-                statusButton2.text = "Done, next step"
-                statusButton2.setOnClickListener {
-                    prefs.edit().putBoolean("restricted_step_done", true).apply()
-                    showEasySetup()
+                statusButton2.text = "Next step →"
+                statusButton2.setOnClickListener { goEasyStep(2) }
+                linkButton.text = "← Back to setup choice"
+                linkButton.setOnClickListener {
+                    setupChoice = null
+                    showChoice()
                 }
             }
-        } else {
-            // ---- Step 2: switch it on ----
-            statusText.text = if (isTv) {
-                "EASY SETUP\nSwitch on App Closer\n\n" +
-                    "1. Press \"Switch on App Closer\" below.\n" +
-                    "2. Choose App Closer (under Services or Downloaded services).\n" +
-                    "3. Switch it on and choose OK.\n" +
-                    "4. Press Back to return here."
-            } else {
-                (if (Build.VERSION.SDK_INT >= 33) "EASY SETUP · STEP 2 OF 2\n" else "EASY SETUP\n") +
-                    "Switch on App Closer\n\n" +
-                    "1. Tap the \"Switch on App Closer\" button below.\n" +
-                    "2. Tap App Closer (under Downloaded apps).\n" +
-                    "3. Turn on \"Use App Closer\" and tap Allow.\n" +
-                    "4. Press Back to return here."
+            2 -> {
+                statusText.text = "EASY SETUP · STEP 2 OF 3\nAllow restricted settings\n\n" +
+                    "1. Tap \"Open App info\" below.\n" +
+                    "2. Tap the three dots ⋮ in the TOP RIGHT corner.\n" +
+                    "3. Tap \"Allow restricted settings\".\n" +
+                    "4. Enter your PIN or fingerprint if asked.\n" +
+                    "5. Press Back to return here.\n\n" +
+                    "No three dots? Go back and do step 1 first."
+                statusButton.text = "Open App info"
+                statusButton.setOnClickListener {
+                    awaitingStep = 3
+                    openSettingsUri(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName")
+                }
+                statusButton2.visibility = View.VISIBLE
+                statusButton2.text = "Next step →"
+                statusButton2.setOnClickListener { goEasyStep(3) }
+                linkButton.text = "← Back to step 1"
+                linkButton.setOnClickListener { goEasyStep(1) }
             }
-            statusButton.text = "Switch on App Closer"
-            statusButton.setOnClickListener { openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS) }
+            else -> {
+                statusText.text = (if (needsUnlock) "EASY SETUP · STEP 3 OF 3\n" else "EASY SETUP\n") +
+                    "Switch on App Closer\n\n" +
+                    "1. Tap \"Go to Accessibility\" below.\n" +
+                    (if (isTv) "2. Choose App Closer (under Services or Downloaded services).\n" +
+                        "3. Switch it on and choose OK.\n"
+                    else "2. Tap App Closer (under Downloaded apps).\n" +
+                        "3. Turn on \"Use App Closer\" and tap Allow.\n") +
+                    "4. Press Back to return here. You're done!"
+                statusButton.text = "Go to Accessibility"
+                statusButton.setOnClickListener {
+                    awaitingStep = 0
+                    openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                }
+                if (needsUnlock) {
+                    linkButton.text = "← Back to step 2"
+                    linkButton.setOnClickListener { goEasyStep(2) }
+                } else {
+                    linkButton.text = "← Back to setup choice"
+                    linkButton.setOnClickListener {
+                        setupChoice = null
+                        showChoice()
+                    }
+                }
+            }
         }
         statusButton.requestFocus()
     }
+
 
 
     private fun openSettingsUri(action: String, uri: String) {
