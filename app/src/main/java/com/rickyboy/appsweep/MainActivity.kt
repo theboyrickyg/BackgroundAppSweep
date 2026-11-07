@@ -453,7 +453,7 @@ class MainActivity : AppCompatActivity() {
                 statusButton.text = "Go to Accessibility"
                 statusButton.setOnClickListener {
                     awaitingStep = 2
-                    openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    openAccessibilitySettings()
                 }
                 statusButton2.visibility = View.VISIBLE
                 statusButton2.text = "Next step →"
@@ -495,7 +495,7 @@ class MainActivity : AppCompatActivity() {
                 statusButton.text = "Go to Accessibility"
                 statusButton.setOnClickListener {
                     awaitingStep = 0
-                    openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    openAccessibilitySettings()
                 }
                 if (needsUnlock) {
                     linkButton.text = "← Back to step 2"
@@ -819,10 +819,43 @@ class MainActivity : AppCompatActivity() {
                     "4. Press Back to return here.\n\n" +
                     "You can switch it off again at any time in the same place."
             )
-            .setPositiveButton("Open Accessibility settings") { _, _ ->
-                openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            }
+            .setPositiveButton("Open Accessibility settings") { _, _ -> openAccessibilitySettings() }
             .setNegativeButton("Not now", null)
+            .show()
+    }
+
+    /**
+     * Opens Accessibility settings. Some TVs and projectors don't have the standard screen, so this
+     * tries the known alternatives, and if none exist explains where else it might be.
+     */
+    private fun openAccessibilitySettings() {
+        val candidates = listOf(
+            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+            Intent().setClassName("com.android.tv.settings", "com.android.tv.settings.accessibility.AccessibilityActivity"),
+            Intent().setClassName("com.android.tv.settings", "com.android.tv.settings.system.AccessibilityActivity"),
+            Intent().setClassName("com.google.android.tv.settings", "com.android.tv.settings.accessibility.AccessibilityActivity"),
+            Intent().setClassName("com.android.settings", "com.android.settings.Settings\$AccessibilitySettingsActivity")
+        )
+        for (intent in candidates) {
+            val target = packageManager.resolveActivity(intent, 0)?.activityInfo ?: continue
+            // "android" = the system's "no app can do this" box, which is what this TV showed
+            if (!target.exported || !target.enabled || target.packageName == "android") continue
+            try {
+                startActivity(intent)
+                return
+            } catch (_: Exception) {
+            }
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Accessibility not found")
+            .setMessage(
+                "This TV doesn't have the usual Accessibility screen. Try opening it yourself:\n\n" +
+                    "Settings → Device Preferences (or System) → Accessibility → App Closer → switch on.\n\n" +
+                    "If there's no Accessibility menu, or App Closer isn't listed, this TV doesn't allow " +
+                    "automatic closing. The guided Close All still works: press Force stop, OK, Clear cache, then Back on each app."
+            )
+            .setPositiveButton("Open TV Settings") { _, _ -> openSettings(Settings.ACTION_SETTINGS) }
+            .setNegativeButton("OK", null)
             .show()
     }
 
