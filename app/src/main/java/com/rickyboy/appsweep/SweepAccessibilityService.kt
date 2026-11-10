@@ -38,6 +38,9 @@ object EasySweep {
 
     /** Each app as it's closed, so the list can drop it straight away. */
     val closedNow = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 64)
+
+    /** Every app closed (or found already closed) in the last sweep, for the final list. */
+    val closedPkgs: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
 }
 
 /**
@@ -208,11 +211,20 @@ class SweepAccessibilityService : AccessibilityService() {
             var closed = 0
             report.setLength(0)
             notes = 0
+            EasySweep.closedPkgs.clear()
             report.append("Phone: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE}\n\n")
             publish(true, 2, "")
             withContext(Dispatchers.Main) { showOverlay(apps) }
             try {
                 apps.forEachIndexed { i, (pkg, label) ->
+                    if (forceStop && !isTv && sweeper.isStopped(pkg)) {
+                        // already fully closed: skip its Settings page (saves a few seconds each)
+                        EasySweep.closedPkgs.add(pkg)
+                        OpenedApps.remove(applicationContext, listOf(pkg))
+                        EasySweep.closedNow.tryEmit(pkg)
+                        withContext(Dispatchers.Main) { removeTvRow(pkg) }
+                        return@forEachIndexed
+                    }
                     publish(true, 3 + 92 * i / apps.size.coerceAtLeast(1), label)
                     updateOverlay(i + 1, apps.size, label)
                     val ok = processApp(pkg, label, forceStop, clearCache)
@@ -220,6 +232,7 @@ class SweepAccessibilityService : AccessibilityService() {
                     if (ok) {
                         closed++
                         if (forceStop) {
+                            EasySweep.closedPkgs.add(pkg)
                             OpenedApps.remove(applicationContext, listOf(pkg))
                             EasySweep.closedNow.tryEmit(pkg)
                         }
@@ -230,7 +243,7 @@ class SweepAccessibilityService : AccessibilityService() {
             }
             publish(true, 98, "")
             withContext(Dispatchers.Main) { closeSettingsPage() }
-            delay(3000)   // let Android reclaim memory before the "after" reading
+            delay(1500)   // let Android reclaim memory before the "after" reading
             val result = SweepResult(
                 closed = closed,
                 ramFreed = (sweeper.availableRam() - ramBefore).coerceAtLeast(0),
@@ -275,12 +288,12 @@ class SweepAccessibilityService : AccessibilityService() {
                     )
             )
         }
-        delay(700)
+        delay(250)
 
         // Wait for this app's page (its name on screen) and the Force stop button
         val stopButton = waitFor(4000) {
             val node = find(texts.forceStop)
-            if (node != null && (onScreen(label) || it > 2500)) node else null
+            if (node != null && (onScreen(label) || it > 1500)) node else null
         }
         if (stopButton == null) {
             note("$label: couldn't find the Force stop button.\nScreen showed: ${screenTexts()}")
@@ -300,10 +313,9 @@ class SweepAccessibilityService : AccessibilityService() {
                 } else {
                     click(ok)
                 }
-                delay(600)
                 // Success if the confirm was pressed, or the Force stop button has now greyed out
-                val after = find(texts.forceStop)
-                closed = ok != null || (after != null && !isEnabled(after))
+                val after = waitFor(700) { find(texts.forceStop)?.takeIf { b -> !isEnabled(b) } }
+                closed = ok != null || after != null
             }
         }
         if (clearCache) clearCacheHere(label)
@@ -316,7 +328,7 @@ class SweepAccessibilityService : AccessibilityService() {
         if (direct != null) {
             if (isEnabled(direct) && click(direct)) {
                 waitFor(1500) { findConfirm() }?.let { click(it) }
-                delay(400)
+                delay(150)
             }
             return
         }
@@ -329,7 +341,7 @@ class SweepAccessibilityService : AccessibilityService() {
         val clear = waitFor(3000) { find(texts.clearCache) } ?: return
         if (isEnabled(clear) && click(clear)) {
             waitFor(1000) { findConfirm() }?.let { click(it) }
-            delay(400)
+            delay(150)
         }
     }
 
@@ -555,7 +567,7 @@ class SweepAccessibilityService : AccessibilityService() {
             }
             if (v != null) return v
             if (elapsed > timeoutMs) return null
-            delay(150)
+            delay(70)
         }
     }
 

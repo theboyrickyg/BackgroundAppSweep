@@ -194,6 +194,8 @@ class MainActivity : AppCompatActivity() {
                     val r = st.result
                     if (r != null) {
                         EasySweep.state.value = st.copy(result = null, report = "")
+                        val gone = HashSet(EasySweep.closedPkgs)
+                        if (gone.isNotEmpty()) showList(currentApps.filter { it.packageName !in gone })
                         cleanGauge.finish()
                         showSweepDone(r)
                         if (r.closed == 0 && st.report.isNotBlank()) showEasyReport(st.report)
@@ -699,14 +701,17 @@ class MainActivity : AppCompatActivity() {
             updateMemory()
             if (guided) {
                 statsText.text = "Press Close All: each app's page opens. Press Force stop, OK, then Clear cache, then Back."
+                statsText.visibility = View.VISIBLE
                 return@launch
             }
             if (tvLaunched) {
                 statsText.text = "Automatic closing is on · press Close All"
+                statsText.visibility = View.VISIBLE
                 return@launch
             }
             if (easy) {
-                statsText.text = "Easy mode · apps you've opened since your last sweep"
+                statsText.text = ""
+                statsText.visibility = View.GONE     // the list header already explains the list
                 return@launch
             }
             // Total cache across all installed apps takes a moment, so only work it out
@@ -755,6 +760,7 @@ class MainActivity : AppCompatActivity() {
         val parts = mutableListOf("Apps using ${AppAdapter.formatKb(appRam)} RAM")
         if (totalCache >= 0) parts.add("${AppAdapter.formatBytes(totalCache)} cache can be cleared")
         statsText.text = parts.joinToString("  ·  ")
+        statsText.visibility = View.VISIBLE
     }
 
     // ---------- Actions ----------
@@ -1006,13 +1012,7 @@ class MainActivity : AppCompatActivity() {
         sweptThisSession = true
         if (worked) {
             // The happy ram pops in where the button was
-            if (result.ramFreed < 50L * 1024 * 1024) {
-                resultText.text = "Only a little RAM needed freeing: Android had already paused most of these apps " +
-                    "in the background. Closing them stops them waking up again."
-                resultText.visibility = View.VISIBLE
-            } else {
-                resultText.visibility = View.GONE
-            }
+            resultText.visibility = View.GONE
             sweepButton.visibility = View.INVISIBLE   // stays in place for when it comes back
             allCleanView.visibility = View.VISIBLE
             allCleanView.scaleX = 0.6f
@@ -1022,9 +1022,7 @@ class MainActivity : AppCompatActivity() {
                 .setDuration(450).setInterpolator(android.view.animation.OvershootInterpolator(1.6f)).start()
         } else if (result.closed > 0) {
             // closed some (e.g. a single app) but others are still open: no "All clean!"
-            resultText.text = "Closed ${result.closed} app${if (result.closed == 1) "" else "s"}. " +
-                "$remaining still open: press Close All to clean the rest."
-            resultText.visibility = View.VISIBLE
+            resultText.visibility = View.GONE
             sweepButton.setBackgroundResource(R.drawable.bg_sweep_button)
             sweepButton.text = getString(R.string.sweep_button)
             cleanGauge.reset()
