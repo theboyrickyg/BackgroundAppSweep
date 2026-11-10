@@ -90,6 +90,10 @@ class MainActivity : AppCompatActivity() {
     private var guidedDiskBefore = 0L
     private var guidedNextJob: Job? = null
     private var autoSweepPending = false
+    private var unlockDialog: AlertDialog? = null
+    private lateinit var instantLink: Button
+    private var titleTaps = 0
+    private var titleTapStart = 0L
 
     /** TV without Pro: the list is always the TV's launched apps, whether closing is guided or automatic. */
     private val tvList: Boolean get() = isTv && !Shell.isReady()
@@ -167,6 +171,11 @@ class MainActivity : AppCompatActivity() {
         list.itemAnimator = null // smooth live updates, keeps TV remote focus in place
 
         sweepButton.setOnClickListener { sweepAll() }
+        instantLink = findViewById(R.id.instantLink)
+        instantLink.setOnClickListener {
+            if (setupChoice == "pro" && Adb.hasWorkedBefore(this) && Unlock.isUnlocked(this)) checkConnection(userAsked = true)
+            else startInstantSetup()
+        }
 
         Shell.readyListeners.add(onShellReady)
         Shizuku.addBinderReceivedListenerSticky(binderReceived)
@@ -204,7 +213,34 @@ class MainActivity : AppCompatActivity() {
             }
         }
         autoSweepPending = intent?.getBooleanExtra("auto_sweep", false) == true
+
+        // App Closer Unlimited: restore any past purchase and fetch the price
+        Unlock.onUnlocked = {
+            unlockDialog?.dismiss()
+            toast("App Closer Unlimited unlocked ✓ Thank you!")
+        }
+        Unlock.connect(this)
+        if (intent?.getBooleanExtra("show_unlock", false) == true) sweepButton.post { showUnlock() }
+        // Owner copies (not from the Play Store): tap the title 7 times to unlock / lock again
+        findViewById<View>(R.id.appTitle)?.setOnClickListener {
+            val now = System.currentTimeMillis()
+            if (now - titleTapStart > 4000) { titleTapStart = now; titleTaps = 0 }
+            if (++titleTaps >= 7) {
+                titleTaps = 0
+                when (Unlock.toggleOwnerUnlock(this)) {
+                    true -> toast("Owner unlock ON")
+                    false -> toast("Owner unlock OFF")
+                    null -> Unit
+                }
+            }
+        }
         sweepButton.requestFocus() // TV remote starts on the big button
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra("show_unlock", false)) showUnlock()
     }
 
     override fun onResume() {
@@ -267,6 +303,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun showStatus(status: Shell.Status) {
         val isReady = status == Shell.Status.READY
+        // Normal mode running: offer Instant mode (or reconnecting it, if it was set up before)
+        instantLink.visibility = if (!isTv && isReady && !Shell.isReady()) View.VISIBLE else View.GONE
+        instantLink.text = if (setupChoice == "pro" && Adb.hasWorkedBefore(this)) "⚡ Reconnect Instant mode" else "⚡ Instant mode (advanced)"
         statusCard.visibility = if (isReady) View.GONE else View.VISIBLE
         sweepButton.isEnabled = isReady && !busy
         sweepButton.alpha = if (isReady) 1f else 0.4f
@@ -279,7 +318,8 @@ class MainActivity : AppCompatActivity() {
         // People who already set up Pro (before Easy existed) carry on with Pro
         val choice = setupChoice ?: if (Adb.hasWorkedBefore(this) || Adb.hasPaired(this)) "pro" else null
         if (!isReady && status != Shell.Status.CONNECTING && choice != "pro") {
-            if (choice == "easy") showEasySetup() else showChoice()
+            if (choice == null && !isTv) setupChoice = "easy"
+            if (choice == "easy" || (choice == null && !isTv)) showEasySetup() else showChoice()
             clearList()
             return
         }
@@ -295,11 +335,8 @@ class MainActivity : AppCompatActivity() {
         }
         if (!isReady) {
             linkButton.visibility = View.VISIBLE
-            linkButton.text = "← Back to setup choice"
-            linkButton.setOnClickListener {
-                setupChoice = null
-                showChoice()
-            }
+            linkButton.text = "← Back to normal mode"
+            linkButton.setOnClickListener { leaveInstantSetup() }
         }
 
         when (status) {
@@ -457,7 +494,7 @@ class MainActivity : AppCompatActivity() {
      * that order: try → unlock → switch on.
      */
     private fun showEasySetup() {
-        val title = if (pairHelper) "PRO SETUP · TURN ON AUTO-PAIRING" else "EASY SETUP"
+        val title = if (pairHelper) "INSTANT MODE · TURN ON AUTO-PAIRING" else "SETUP"
         statusCard.visibility = View.VISIBLE
         codeRow.visibility = View.GONE
         statusButton.visibility = View.VISIBLE
@@ -548,11 +585,7 @@ class MainActivity : AppCompatActivity() {
                 checkConnection(userAsked = false)
             }
         } else {
-            linkButton.text = "← Back to setup choice"
-            linkButton.setOnClickListener {
-                setupChoice = null
-                showChoice()
-            }
+            linkButton.visibility = View.GONE   // only one way to set up now
         }
     }
 
@@ -767,9 +800,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun sweepAll() {
         if (busy || !ready) return
+        if (!Unlock.canClean(this)) {
+            showUnlock()
+            return
+        }
         val apps = currentApps
         if (tvGuided) {
-            startGuided(apps.filter { it.isRunning && !it.isProtected })
+            val targets = apps.filter { it.isRunning && !it.isProtected }
+            if (targets.isNotEmpty()) countFreeClean()
+            startGuided(targets)
             return
         }
         if (easyMode) {
@@ -779,10 +818,12 @@ class MainActivity : AppCompatActivity() {
                 toast("Nothing to close yet. Apps you open will show up here.")
                 return
             }
+            countFreeClean()
             startSweepUi()
             if (!svc.sweep(targets.map { it.packageName to it.label })) endSweepUi()
             return
         }
+        countFreeClean()
         startSweepUi()
         lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -1001,6 +1042,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Green button + "Closed 6 apps · freed …", then back to normal after 5 seconds. */
     private fun showSweepDone(result: SweepResult) {
+        Unlock.addTotals(this, result.closed, result.cacheFreed)
         statClosed.text = result.closed.toString()
         statRam.text = AppAdapter.formatBytes(result.ramFreed)
         statCache.text = AppAdapter.formatBytes(result.cacheFreed)
@@ -1069,6 +1111,86 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+    /** ⚡ Instant mode: Developer options + pairing. Part of App Closer Unlimited. */
+    private fun startInstantSetup() {
+        if (!Unlock.isUnlocked(this)) {
+            showUnlock()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("⚡ Instant mode")
+            .setMessage(
+                "Closes everything at once in a couple of seconds, silently, with no Settings pages opening. " +
+                    "It also shows RAM for every app and clears all caches at once.\n\n" +
+                    "It's for confident users: it uses Android's Developer options and Wireless debugging. " +
+                    "App Closer finds and enters the pairing code for you.\n\n" +
+                    "After a phone restart you may need to switch Wireless debugging back on. " +
+                    "Normal mode still works whenever Instant mode isn't connected."
+            )
+            .setPositiveButton("Set it up") { _, _ ->
+                setupChoice = "pro"
+                instantLink.visibility = View.GONE
+                checkConnection(userAsked = false)
+                statusCard.post { scrollToTop(statusCard) }
+            }
+            .setNegativeButton("Not now", null)
+            .show()
+    }
+
+    private fun scrollToTop(v: View) {
+        var p: View? = v
+        while (p != null && p !is androidx.core.widget.NestedScrollView) p = p.parent as? View
+        (p as? androidx.core.widget.NestedScrollView)?.smoothScrollTo(0, 0)
+    }
+
+    private fun leaveInstantSetup() {
+        setupChoice = "easy"
+        pairHelper = false
+        checkConnection(userAsked = false)
+    }
+
+    /** Counts one free Close All clean and says how many are left. */
+    private fun countFreeClean() {
+        if (Unlock.isUnlocked(this)) return
+        Unlock.useClean(this)
+        val left = Unlock.freeCleansLeft(this)
+        toast(if (left == 0) "That was your last free clean" else "Free clean ${Unlock.cleansUsed(this)} of ${Unlock.FREE_CLEANS}")
+    }
+
+    /** The "Unlock App Closer" screen: their own results, what's included, one button. */
+    private fun showUnlock() {
+        if (unlockDialog?.isShowing == true) return
+        val view = layoutInflater.inflate(R.layout.dialog_unlock, null)
+        val stats = view.findViewById<TextView>(R.id.unlockStats)
+        val buy = view.findViewById<Button>(R.id.unlockBuy)
+        val closed = Unlock.totalClosed(this)
+        val cache = Unlock.totalCache(this)
+        stats.text = if (closed > 0 || cache > 0) {
+            colored("You've closed ", 0, "$closed apps", RED, " and cleared ", 0,
+                AppAdapter.formatBytes(cache), GREEN, " of cache with App Closer.")
+        } else {
+            "You've used your ${Unlock.FREE_CLEANS} free cleans."
+        }
+        fun setPrice() {
+            buy.text = Unlock.price()?.let { "UNLOCK FOR $it · ONE-OFF" } ?: "UNLOCK · ONE-OFF"
+        }
+        setPrice()
+        Unlock.connect(this) { if (unlockDialog?.isShowing == true) setPrice() }
+        val dialog = AlertDialog.Builder(this).setView(view).create()
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        buy.setOnClickListener { Unlock.buy(this)?.let { toast(it) } }
+        view.findViewById<Button>(R.id.unlockLater).setOnClickListener { dialog.dismiss() }
+        view.findViewById<Button>(R.id.unlockRestore).setOnClickListener {
+            toast("Checking Google Play…")
+            Unlock.connect(this) {
+                if (!Unlock.isUnlocked(this)) toast("No purchase found on this Google account")
+            }
+        }
+        unlockDialog = dialog
+        dialog.show()
+        buy.requestFocus()
+    }
 
     private fun showOptions(app: RunningApp) {
         val actions = mutableListOf<Action>()
@@ -1150,6 +1272,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setBlocked(app: RunningApp, block: Boolean) {
+        if (block && !Unlock.canClean(this)) {
+            showUnlock()
+            return
+        }
         lifecycleScope.launch {
             withContext(Dispatchers.IO) { sweeper.setAutoStartBlocked(app.packageName, block) }
             toast(

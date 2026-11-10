@@ -387,5 +387,19 @@
         android:clipToPadding="false"
         android:nestedScrollingEnabled="false"
         android:paddingBottom="12dp" />
+
+    <!-- Instant mode (Developer options) is tucked away here for confident users -->
+    <Button
+        android:id="@+id/instantLink"
+        style="?android:attr/borderlessButtonStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="16dp"
+        android:text="⚡ Instant mode (advanced)"
+        android:textAllCaps="false"
+        android:textColor="@color/text_dim"
+        android:textSize="14sp"
+        android:visibility="gone" />
 </LinearLayout>
 </androidx.core.widget.NestedScrollView>

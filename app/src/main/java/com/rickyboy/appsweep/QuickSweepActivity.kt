@@ -32,6 +32,12 @@ class QuickSweepActivity : AppCompatActivity() {
         }
 
         val sweeper = Sweeper(applicationContext)
+        // Free cleans used up: open App Closer on its unlock screen instead
+        if (!Unlock.canClean(this)) {
+            startActivity(Intent(this, MainActivity::class.java).putExtra("show_unlock", true))
+            finishAndRemoveTask()
+            return
+        }
         lifecycleScope.launch {
             status.text = "Connecting…"
             val state = Shell.ensureConnected(applicationContext, userAsked = false)
@@ -42,6 +48,7 @@ class QuickSweepActivity : AppCompatActivity() {
                     .filter { !it.isProtected }
                     .map { it.packageName to it.label }
                 if (svc != null && targets.isNotEmpty()) {
+                    Unlock.useClean(applicationContext)
                     svc.sweep(targets, finish = SweepAccessibilityService.Finish.GO_HOME)
                     finishAndRemoveTask()
                     return@launch
@@ -68,9 +75,11 @@ class QuickSweepActivity : AppCompatActivity() {
                 return@launch
             }
             status.text = "Sweeping…"
+            Unlock.useClean(applicationContext)
             val r = withContext(Dispatchers.IO) {
                 sweeper.sweepAll(sweeper.scan(includeSystem = false))
             }
+            Unlock.addTotals(applicationContext, r.closed, r.cacheFreed)
             status.text = "All clean ✓"
             result.text = resultLine(r)
             result.visibility = View.VISIBLE
